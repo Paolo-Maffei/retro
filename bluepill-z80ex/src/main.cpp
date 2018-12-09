@@ -18,10 +18,31 @@ int printf(const char* fmt, ...) {
 }
 
 PinC<13> led;
+Context context;
 
-static void emulate (const void* rom, int len) {
-    static Context context;
-    memcpy(context.mem + 0x100, rom, len);
+void SystemCall (Context *ctx, int) {
+    auto& regs = ctx->state.registers;
+
+    // emulate CP/M bdos calls from 0x0005, register C functions 2 and 9
+    switch (regs.byte[Z80_C]) {
+
+        case 2: // output the character in E
+            console.putc(regs.byte[Z80_E]);
+            break;
+
+        case 9: // output the string in DE until '$' terminator
+            for (int i = regs.word[Z80_DE]; *mapMem(ctx, i) != '$'; ++i)
+                console.putc(*mapMem(ctx, i));
+            break;
+    }
+}
+
+int main() {
+    console.init();
+    console.baud(115200, fullSpeedClock());
+    led.mode(Pinmode::out);
+
+    memcpy(context.mem + 0x100, rom, sizeof rom);
 
     // Patch the memory of the program. Reset at 0x0000 is trapped by an
     // OUT which will stop emulation. CP/M bdos call 5 is trapped by an IN.
@@ -34,42 +55,18 @@ static void emulate (const void* rom, int len) {
     context.mem[6] = 0x00;
     context.mem[7] = 0xc9;       // RET
 
-    context.done = 0;
-
     // start emulating
 
     Z80Reset(&context.state);
     context.state.pc = 0x100;
-    do {
-        Z80Emulate(&context.state, 4000000, &context);
-        led.toggle();
-    } while (!context.done);
-    led = 0;
-}
-
-// emulate CP/M bdos call from 0x0005, register C functions 2 and 9
-
-void SystemCall (Context *ctx, int) {
-    auto& regs = ctx->state.registers;
-    switch (regs.byte[Z80_C]) {
-
-        case 2: // output character in E
-            printf("%c", regs.byte[Z80_E]);
-            break;
-
-        case 9: // output string in DE until '$' terminator
-            for (int i = regs.word[Z80_DE]; ctx->mem[i] != '$'; i++)
-                printf("%c", ctx->mem[i & 0xffff]);
-            break;
-    }
-}
-
-int main() {
-    console.init();
-    console.baud(115200, fullSpeedClock());
-    led.mode(Pinmode::out);
+    context.done = 0;
 
     uint32_t start = ticks;
-    emulate(rom, sizeof rom);
+    do {
+        Z80Emulate(&context.state, 2000000, &context);
+        led.toggle();
+    } while (!context.done);
     printf("Emulating zexall took %d ms.\n", ticks - start);
+
+    led = 0;
 }

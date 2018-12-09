@@ -3,7 +3,7 @@
 
 typedef struct {
     Z80_STATE state;
-    uint8_t   mem [1<<14];  // size must be a power of two
+    uint8_t   mem [1<<14];  // size should be a power of two
     uint8_t   done;
 } Context;
 
