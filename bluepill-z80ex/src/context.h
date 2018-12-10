@@ -12,4 +12,4 @@ inline uint8_t* mapMem (void* cp, uint16_t addr) {
     return ctx->mem + (addr % sizeof ctx->mem);
 }
 
-extern void SystemCall (Context *ctx, int request);
+extern void systemCall (Context *ctx, int request);

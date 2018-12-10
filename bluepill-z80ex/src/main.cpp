@@ -20,7 +20,7 @@ int printf(const char* fmt, ...) {
 PinC<13> led;
 Context context;
 
-void SystemCall (Context *ctx, int) {
+void systemCall (Context *ctx, int) {
     auto& regs = ctx->state.registers;
 
     // emulate CP/M bdos calls from 0x0005, register C functions 2 and 9

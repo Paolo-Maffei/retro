@@ -104,7 +104,7 @@ extern "C" {
 #define Z80_WRITE_WORD_INTERRUPT(a,x) Z80_WRITE_WORD((a), (x))
 
 #define Z80_INPUT_BYTE(p,x) \
-    { SystemCall((Context*) context, (p)); }
+    { systemCall((Context*) context, (p)); }
 
 #define Z80_OUTPUT_BYTE(p,x) \
     { ((Context*) context)->done = 1; number_cycles = 0; }
