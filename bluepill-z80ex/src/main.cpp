@@ -69,4 +69,5 @@ int main() {
     printf("Emulating zexall took %d ms.\n", ticks - start);
 
     led = 1;  // turn LED off (inverted logic)
+    while (true) {}
 }
