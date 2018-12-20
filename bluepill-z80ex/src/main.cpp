@@ -66,7 +66,7 @@ int main() {
         Z80Emulate(&context.state, 2000000, &context);
         led.toggle();
     } while (!context.done);
-    printf("Emulating zexall took %d ms.\n", ticks - start);
+    printf("\nEmulating zexall took %d ms.\n", ticks - start);
 
     led = 1;  // turn LED off (inverted logic)
     while (true) {}
