@@ -1,0 +1,27 @@
+; Cold bootstrap for z80 emulator
+;
+; generate the header file with this command:
+;   z80asm -o - boot.z80 | xxd -i >src/boot.h
+
+CCP     equ 0E800h
+BIOS    equ CCP + 1600h
+
+        org 0000h
+
+boot:	ld de,greet
+        in a,(3)                ; display greeting
+
+        ld a,0
+        ld b,48                 ; read CCP + BDOS + BIOS into memory
+        ld de,1                 ; skip first sector on first track
+        ld hl,CCP               ; start address
+	in a,(4)                ; disk read request
+
+        jp BIOS                 ; jump to bios cold start
+
+greet:  db 13,10,'[RetroLab Z80]',13,10,0
+
+        ds 007Fh-$
+        db 0                    ; so generated code is exactly 128 bytes
+
+        end
