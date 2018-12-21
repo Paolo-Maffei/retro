@@ -145,18 +145,13 @@ sectrn: ld l,c
 	ld h,b
         ret
 
-read:	ld a,(usrdrv)
-        ld b,1
+read:   ld b,1
+        jr rdwr
+write:  ld b,1+80h
+rdwr:   ld a,(sekdsk)
         ld de,(seksat)
         ld hl,(dmaadr)
         in a,(4)
-	ret
-
-write:	ld a,(usrdrv)
-        ld b,1
-        ld de,(seksat)
-        ld hl,(dmaadr)
-        in a,(5)
 	ret
 
 listst:

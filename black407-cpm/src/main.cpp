@@ -74,7 +74,7 @@ int main() {
     console.baud(115200, fullSpeedClock()/2);
     led.mode(Pinmode::out);
 
-    if (disk.valid())
+    if (0 && disk.valid())
         disk.init();
     else {
         disk.init(true);
