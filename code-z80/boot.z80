@@ -3,8 +3,8 @@
 ; generate the header file with this command:
 ;   z80asm -o - boot.z80 | xxd -i >src/boot.h
 
-CCP     equ 0E800h
-BIOS    equ CCP + 1600h
+CCP:    equ 0E800h
+BIOS:   equ CCP + 1600h
 
         org 0000h
 
@@ -19,7 +19,7 @@ boot:	ld de,greet
 
         jp BIOS                 ; jump to bios cold start
 
-greet:  db 13,10,'[RetroLab Z80]',13,10,0
+greet:  db 13,10,'[JeeLabs Retro Z80]',13,10,0
 
         ds 007Fh-$
         db 0                    ; so generated code is exactly 128 bytes
