@@ -99,7 +99,7 @@ int main() {
     // emulated room bootstrap, loads first disk sector to 0x0000
     disk.readSector(0, mapMem(&context, 0x0000));
 
-    // also leave a copy of HEXSAVE.COM at 0x0100
+    // leave a copy of HEXSAVE.COM at 0x0100
     memcpy(mapMem(&context, 0x0100), ram, sizeof ram);
 
     // start emulating
