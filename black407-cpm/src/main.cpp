@@ -13,6 +13,11 @@ const uint8_t rom [] = {
 #include "rom-cpm.h"
 };
 
+// xxd -i <hexsave.com >../common-z80/hexsave.h
+const uint8_t ram [] = {
+#include "hexsave.h"
+};
+
 UartBufDev< PinA<9>, PinA<10> > console;
 
 int printf(const char* fmt, ...) {
@@ -91,7 +96,11 @@ int main() {
             disk.writeSector(26*2 + i, buf);
     }
 
+    // emulated room bootstrap, loads first disk sector to 0x0000
     disk.readSector(0, mapMem(&context, 0x0000));
+
+    // also leave a copy of HEXSAVE.COM at 0x0100
+    memcpy(mapMem(&context, 0x0100), ram, sizeof ram);
 
     // start emulating
     Z80Reset(&context.state);
