@@ -1,6 +1,7 @@
 #include <jee.h>
 #include <string.h>
 #include "flashwear.h"
+#include "cpmdate.h"
 
 extern "C" {
 #include "context.h"
@@ -26,8 +27,26 @@ int printf(const char* fmt, ...) {
 }
 
 PinB<9> led;
+RTC rtc;
 Context context;
 FlashWear disk;
+
+static void setBankSplit (uint8_t page) {
+    context.split = MAINMEM + (page << 8);
+    memset(context.offset, 0, sizeof context.offset);
+#if NBANKS > 1
+    // max: 3x 56K (+8K), 3x 48K (+16K), 4x 32K (+32K), 8x 16K (+48K)
+    static uint8_t bankedMem [112*1024]; // additional memory banks on F407
+    uint8_t* base = bankedMem;
+    for (int i = 1; i < NBANKS; ++i) {
+        uint8_t* limit = base + (page << 8);
+        if (limit > bankedMem + sizeof bankedMem)
+            break; // no more complete banks left
+        context.offset[i] = base - MAINMEM;
+        base = limit;
+    }
+#endif
+}
 
 void systemCall (Context* z, int req) {
     Z80_STATE* state = &(z->state);
@@ -68,6 +87,36 @@ void systemCall (Context* z, int req) {
             }
             A = 0;
             break;
+        case 5: { // time get/set
+            if (C == 0) {
+                RTC::DateTime dt = rtc.get();
+                //printf("mdy %02d/%02d/20%02d %02d:%02d:%02d (%d ms)\n",
+                //        dt.mo, dt.dy, dt.yr, dt.hh, dt.mm, dt.ss, ticks);
+                uint8_t* ptr = mapMem(&context, HL);
+                int t = date2dr(dt.yr, dt.mo, dt.dy);
+                ptr[0] = t;
+                ptr[1] = t>>8;
+                ptr[2] = dt.hh + 6*(dt.hh/10); // hours, to BCD
+                ptr[3] = dt.mm + 6*(dt.mm/10); // minutes, to BCD
+                ptr[4] = dt.ss + 6*(dt.ss/10); // seconcds, to BCD
+            } else {
+                RTC::DateTime dt;
+                uint8_t* ptr = mapMem(&context, HL);
+                // TODO set clock date & time
+                dr2date(*(uint16_t*) ptr, &dt);
+                dt.hh = ptr[2] - 6*(ptr[2]>>4); // hours, from BCD
+                dt.mm = ptr[3] - 6*(ptr[3]>>4); // minutes, from BCD
+                dt.ss = ptr[4] - 6*(ptr[4]>>4); // seconds, from BCD
+                rtc.set(dt);
+            }
+            break;
+        }
+        case 6: // banked memory config
+            setBankSplit(A);
+            break;
+        case 7: // selmem
+            context.bank = A % NBANKS;
+            break;
         default:
             printf("syscall %d @ %04x ?\n", req, state->pc);
             while (1) {}
@@ -78,6 +127,7 @@ int main() {
     console.init();
     console.baud(115200, fullSpeedClock()/2);
     led.mode(Pinmode::out);
+    rtc.init();
 
     if (disk.valid())
         disk.init();
