@@ -9,6 +9,8 @@ extern "C" {
 }
 
 Context context;
+uint8_t mainMem [1<<16];
+uint8_t bankMem [420*1024]; // lots of additional memory banks
 
 struct Disk {
     FILE* fp;
@@ -23,14 +25,14 @@ struct Disk {
         setbuf(fp, 0);
     }
 
-    void readSector (int pos, void* buf) {
-        fseek(fp, pos * 512, 0);
-        fread(buf, 512, 1, fp);
+    void readSector (int pos, void* buf, int len) {
+        fseek(fp, pos * len, 0);
+        fread(buf, len, 1, fp);
     }
 
-    void writeSector (int pos, void const* buf) {
-        fseek(fp, pos * 512, 0);
-        fwrite(buf, 512, 1, fp);
+    void writeSector (int pos, void const* buf, int len) {
+        fseek(fp, pos * len, 0);
+        fwrite(buf, len, 1, fp);
     }
 } disk;
 
@@ -39,16 +41,13 @@ static bool readable () {
 }
 
 static void setBankSplit (uint8_t page) {
-    context.split = 0;
-    uint8_t* mainMem = mapMem(&context, 0);
     context.split = mainMem + (page << 8);
     memset(context.offset, 0, sizeof context.offset);
 #if NBANKS > 1
-    static uint8_t bankedMem [420*1024]; // lots of additional memory banks
-    uint8_t* base = bankedMem;
+    uint8_t* base = bankMem;
     for (int i = 1; i < NBANKS; ++i) {
         uint8_t* limit = base + (page << 8);
-        if (limit > bankedMem + sizeof bankedMem)
+        if (limit > bankMem + sizeof bankMem)
             break; // no more complete banks left
         context.offset[i] = base - mainMem;
         base = limit;
@@ -80,18 +79,37 @@ void systemCall (Context* z, int req) {
             //  ld hl,(dmaadr)
             //  in a,(4)
             //  ret
+            //printf("AF %04X BC %04X DE %04X HL %04X\n", AF, BC, DE, HL);
+            //for (int i = 0; i < 25; ++i)
+            //    printf("%02x ", mainMem[0xBE90+i]);
+            //printf("\n");
             {
                 bool out = (B & 0x80) != 0;
+#if 0
                 uint8_t sec = DE, trk = DE >> 8, dsk = A, cnt = B & 0x7F;
-                uint32_t pos = 65536*dsk + 256*trk + sec;  // no skewing
+                uint32_t pos = 2048*dsk + 26*trk + sec;  // no skewing
+
+                for (int i = 0; i < cnt; ++i) {
+                    void* mem = mapMem(&context, HL + 128*i);
+                    if (out)
+                        disk.writeSector(pos + i, mem, 128);
+                    else
+                        disk.readSector(pos + i, mem, 128);
+                }
+#else
+                uint8_t cnt = B & 0x7F;
+                uint32_t pos = 65536*A + DE;  // no skewing
 
                 for (int i = 0; i < cnt; ++i) {
                     void* mem = mapMem(&context, HL + 512*i);
+                    //printf("HD wr %d mem 0x%X pos %d\n",
+                    //        out, HL + 512*i, pos + i);
                     if (out)
-                        disk.writeSector(pos + i, mem);
+                        disk.writeSector(pos + i, mem, 512);
                     else
-                        disk.readSector(pos + i, mem);
+                        disk.readSector(pos + i, mem, 512);
                 }
+#endif
             }
             A = 0;
             break;
@@ -111,12 +129,15 @@ void systemCall (Context* z, int req) {
 #endif
             }
             break;
-        case 6: // banked memory config
-            setBankSplit(A);
+        case 6: // banked memory config (or return previous)
+            if (A != 0xFF)
+                setBankSplit(A);
+            else
+                A = (context.offset[1] - context.offset[0]) >> 8;
             break;
         case 7: // selmem (or return previous)
-            if (A < NBANKS)
-                context.bank = A;
+            if (A != 0xFF)
+                context.bank = A % NBANKS;
             else
                 A = context.bank;
             break;

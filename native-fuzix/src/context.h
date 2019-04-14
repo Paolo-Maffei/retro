@@ -11,9 +11,10 @@ typedef struct {
     uint32_t  offset [NBANKS];
 } Context;
 
+extern uint8_t mainMem [1<<16];
+
 inline uint8_t* mapMem (void* cp, uint16_t addr) {
-    static uint8_t mem [1<<16];
-    uint8_t* ptr = mem + addr;
+    uint8_t* ptr = mainMem + addr;
 #if NBANKS > 1
     Context* ctx = (Context*) cp;
     if (ptr < ctx->split)
