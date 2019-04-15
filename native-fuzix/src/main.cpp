@@ -55,9 +55,13 @@ static void setBankSplit (uint8_t page) {
 #endif
 }
 
-void systemCall (Context* z, int req) {
+void systemCall (Context* z, int req, int pc) {
     Z80_STATE* state = &(z->state);
-    //printf(" req %d A %d @ %04x\n", req, A, state->pc);
+#if 0
+    if (req > 3)
+        printf("\treq %d AF %04X BC %04X DE %04X HL %04X SP %04X @ %d:%04X\n",
+                req, AF, BC, DE, HL, SP, context.bank, pc);
+#endif
     switch (req) {
         case 0: // coninst
             A = readable() ? 0xFF : 0x00;
@@ -67,6 +71,7 @@ void systemCall (Context* z, int req) {
             break;
         case 2: // conout
             putchar(C);
+            fflush(stdout);
             break;
         case 3: // constr
             for (uint16_t i = DE; *mapMem(&context, i) != 0; i++)
@@ -102,8 +107,8 @@ void systemCall (Context* z, int req) {
 
                 for (int i = 0; i < cnt; ++i) {
                     void* mem = mapMem(&context, HL + 512*i);
-                    //printf("HD wr %d mem 0x%X pos %d\n",
-                    //        out, HL + 512*i, pos + i);
+                    printf("HD wr %d mem %d:0x%X pos %d\n",
+                            out, context.bank, HL + 512*i, pos + i);
                     if (out)
                         disk.writeSector(pos + i, mem, 512);
                     else
@@ -129,18 +134,28 @@ void systemCall (Context* z, int req) {
 #endif
             }
             break;
-        case 6: // banked memory config (or return previous)
-            if (A != 0xFF)
-                setBankSplit(A);
-            else
-                A = (context.offset[1] - context.offset[0]) >> 8;
+        case 6: // set banked memory limit
+            setBankSplit(A);
             break;
-        case 7: // selmem (or return previous)
-            if (A != 0xFF)
-                context.bank = A % NBANKS;
-            else
-                A = context.bank;
+        case 7: { // select bank and return previous setting
+            uint8_t prevBank = context.bank;
+            context.bank = A;
+            A = prevBank;
             break;
+        }
+        case 8: { // for use in xmove, inter-bank copying
+            uint8_t *src = mainMem + DE, *dst = mainMem + HL;
+            // never map above the split, i.e. in the common area
+            if (dst < context.split)
+                dst += context.offset[(A/NBANKS) % NBANKS];
+            if (src < context.split)
+                src += context.offset[A % NBANKS];
+            // TODO careful, this won't work across the split!
+            memcpy(dst, src, BC);
+            DE += BC;
+            HL += BC;
+            break;
+        }
         default:
             printf("syscall %d @ %04x ?\n", req, state->pc);
             exit(2);
