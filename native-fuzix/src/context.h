@@ -11,7 +11,7 @@ typedef struct {
     uint32_t  offset [NBANKS];
 } Context;
 
-extern uint8_t mainMem [1<<16];
+extern uint8_t mainMem [];
 
 inline uint8_t* mapMem (void* cp, uint16_t addr) {
     uint8_t* ptr = mainMem + addr;

@@ -12,29 +12,27 @@ Context context;
 uint8_t mainMem [1<<16];
 uint8_t bankMem [420*1024]; // lots of additional memory banks
 
-struct Disk {
-    FILE* fp;
+FILE* disk_fp;
 
-    void init () {
-        const char* name = "hd.img";
-        fp = fopen(name, "r+");
-        if (fp == 0) {
-            perror(name);
-            exit(1);
-        }
-        setbuf(fp, 0);
+void disk_init () {
+    const char* name = "hd.img";
+    disk_fp = fopen(name, "r+");
+    if (disk_fp == 0) {
+        perror(name);
+        exit(1);
     }
+    setbuf(disk_fp, 0);
+}
 
-    void readSector (int pos, void* buf, int len) {
-        fseek(fp, pos * len, 0);
-        fread(buf, len, 1, fp);
-    }
+void disk_read (int pos, void* buf, int len) {
+    fseek(disk_fp, pos * len, 0);
+    fread(buf, len, 1, disk_fp);
+}
 
-    void writeSector (int pos, void const* buf, int len) {
-        fseek(fp, pos * len, 0);
-        fwrite(buf, len, 1, fp);
-    }
-} disk;
+void disk_write (int pos, void const* buf, int len) {
+    fseek(disk_fp, pos * len, 0);
+    fwrite(buf, len, 1, disk_fp);
+}
 
 static bool readable () {
     return false; // XXX
@@ -97,9 +95,9 @@ void systemCall (Context* z, int req, int pc) {
                 for (int i = 0; i < cnt; ++i) {
                     void* mem = mapMem(&context, HL + 128*i);
                     if (out)
-                        disk.writeSector(pos + i, mem, 128);
+                        disk_write(pos + i, mem, 128);
                     else
-                        disk.readSector(pos + i, mem, 128);
+                        disk_read(pos + i, mem, 128);
                 }
 #else
                 uint8_t cnt = B & 0x7F;
@@ -110,9 +108,9 @@ void systemCall (Context* z, int req, int pc) {
                     printf("HD wr %d mem %d:0x%X pos %d\n",
                             out, context.bank, HL + 512*i, pos + i);
                     if (out)
-                        disk.writeSector(pos + i, mem, 512);
+                        disk_write(pos + i, mem, 512);
                     else
-                        disk.readSector(pos + i, mem, 512);
+                        disk_read(pos + i, mem, 512);
                 }
 #endif
             }
@@ -163,13 +161,13 @@ void systemCall (Context* z, int req, int pc) {
 }
 
 int main() {
-    disk.init();
+    disk_init();
 
     const char* kernel = "fuzix.bin";
-    const uint32_t origin = 0x0088;
+    const uint32_t origin = 0x0100;
 
     FILE* fp = fopen(kernel, "r");
-    if (fp == 0 || fread(mapMem(&context, origin), 1, 0xFE00, fp) <= 10000) {
+    if (fp == 0 || fread(mapMem(&context, origin), 1, 0xFF00, fp) <= 1000) {
         perror(kernel);
         exit(1);
     }
