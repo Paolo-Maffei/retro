@@ -56,7 +56,7 @@ void systemCall (Context* z, int req, int pc) {
     Z80_STATE* state = &(z->state);
 #if 0
     if (req > 3)
-        printf("\treq %d AF %04X BC %04X DE %04X HL %04X SP %04X @ %d:%04X\n",
+        printf("\treq %d AF %04X BC %04X DE %04X HL %04X SP %04X @ %d:%04X\r\n",
                 req, AF, BC, DE, HL, SP, context.bank, pc);
 #endif
     switch (req) {
@@ -80,7 +80,7 @@ void systemCall (Context* z, int req, int pc) {
             //  ld hl,(dmaadr)
             //  in a,(4)
             //  ret
-            //printf("AF %04X BC %04X DE %04X HL %04X\n", AF, BC, DE, HL);
+            //printf("AF %04X BC %04X DE %04X HL %04X\r\n", AF, BC, DE, HL);
             {
                 bool out = (B & 0x80) != 0;
 #if 0
@@ -101,8 +101,8 @@ void systemCall (Context* z, int req, int pc) {
                 for (int i = 0; i < cnt; ++i) {
                     void* mem = mapMem(&context, HL + 512*i);
 #if 0
-                    printf("HD wr %d mem %d:0x%X pos %d\n",
-                            out, context.bank, HL + 512*i, pos + i);
+                    printf("HD%d wr %d mem %d:0x%X pos %d\r\n",
+                            A, out, context.bank, HL + 512*i, pos + i);
 #endif
                     if (out)
                         disk_write(pos + i, mem, 512);
@@ -117,7 +117,7 @@ void systemCall (Context* z, int req, int pc) {
             if (C == 0) { // XXX
                 time_t now = time(0);
                 struct tm* p = localtime(&now);
-                //printf("y %d m %d d %d hh %d mm %d ss %d\n",
+                //printf("y %d m %d d %d hh %d mm %d ss %d\r\n",
                 //    p->tm_year+1900, p->tm_mon+1, p->tm_mday,
                 //    p->tm_hour, p->tm_min, p->tm_sec);
                 uint8_t* ptr = mapMem(&context, HL);
@@ -152,7 +152,7 @@ void systemCall (Context* z, int req, int pc) {
             break;
         }
         default:
-            printf("syscall %d @ %04x ?\n", req, state->pc);
+            printf("syscall %d @ %04x ?\r\n", req, state->pc);
             exit(2);
     }
 }
@@ -189,6 +189,6 @@ int main() {
         Z80Emulate(&context.state, 2000000, &context);
     } while (!context.done);
 
-    printf("\ndone @ %04x\n", context.state.pc);
+    printf("\r\ndone @ %04x\r\n", context.state.pc);
     return 0;
 }
