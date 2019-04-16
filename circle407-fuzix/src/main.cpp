@@ -137,6 +137,19 @@ void systemCall (Context* z, int req, int pc) {
             A = prevBank;
             break;
         }
+        case 8: { // for use in xmove, inter-bank copying
+            uint8_t *src = mainMem + DE, *dst = mainMem + HL;
+            // never map above the split, i.e. in the common area
+            if (dst < context.split)
+                dst += context.offset[(A>>4) % NBANKS];
+            if (src < context.split)
+                src += context.offset[A % NBANKS];
+            // TODO careful, this won't work across the split!
+            memcpy(dst, src, BC);
+            DE += BC;
+            HL += BC;
+            break;
+        }
         default:
             printf("syscall %d @ %04x ?\n", req, state->pc);
             while (1) {}

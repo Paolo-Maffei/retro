@@ -142,7 +142,7 @@ void systemCall (Context* z, int req, int pc) {
             uint8_t *src = mainMem + DE, *dst = mainMem + HL;
             // never map above the split, i.e. in the common area
             if (dst < context.split)
-                dst += context.offset[(A/NBANKS) % NBANKS];
+                dst += context.offset[(A>>4) % NBANKS];
             if (src < context.split)
                 src += context.offset[A % NBANKS];
             // TODO careful, this won't work across the split!
