@@ -1,6 +1,9 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
+#include "cpmdate.h"
+#include "console-posix.h"
 
 extern "C" {
 #include "context.h"
@@ -34,10 +37,6 @@ void disk_write (int pos, void const* buf, int len) {
     fwrite(buf, len, 1, disk_fp);
 }
 
-static bool readable () {
-    return false; // XXX
-}
-
 static void setBankSplit (uint8_t page) {
     context.split = mainMem + (page << 8);
     memset(context.offset, 0, sizeof context.offset);
@@ -62,18 +61,17 @@ void systemCall (Context* z, int req, int pc) {
 #endif
     switch (req) {
         case 0: // coninst
-            A = readable() ? 0xFF : 0x00;
+            A = consoleHit() ? 0xFF : 0x00;
             break;
         case 1: // conin
-            A = getchar();
+            A = consoleWait();
             break;
         case 2: // conout
-            putchar(C);
-            fflush(stdout);
+            consoleOut(C);
             break;
         case 3: // constr
             for (uint16_t i = DE; *mapMem(&context, i) != 0; i++)
-                putchar(*mapMem(&context, i));
+                consoleOut(*mapMem(&context, i));
             break;
         case 4: // read/write
             //  ld a,(sekdrv)
@@ -105,8 +103,10 @@ void systemCall (Context* z, int req, int pc) {
 
                 for (int i = 0; i < cnt; ++i) {
                     void* mem = mapMem(&context, HL + 512*i);
+#if 0
                     printf("HD wr %d mem %d:0x%X pos %d\n",
                             out, context.bank, HL + 512*i, pos + i);
+#endif
                     if (out)
                         disk_write(pos + i, mem, 512);
                     else
@@ -118,18 +118,18 @@ void systemCall (Context* z, int req, int pc) {
             break;
         case 5: // time get/set
             if (C == 0) { // XXX
-#if 0
-                RTC::DateTime dt = rtc.get();
-                //printf("mdy %02d/%02d/20%02d %02d:%02d:%02d (%d ms)\n",
-                //        dt.mo, dt.dy, dt.yr, dt.hh, dt.mm, dt.ss, ticks);
+                time_t now = time(0);
+                struct tm* p = localtime(&now);
+                printf("y %d m %d d %d hh %d mm %d ss %d\n",
+                    p->tm_year, p->tm_mon, p->tm_mday,
+                    p->tm_hour, p->tm_min, p->tm_sec);
                 uint8_t* ptr = mapMem(&context, HL);
-                int t = date2dr(dt.yr, dt.mo, dt.dy);
+                int t = date2dr(p->tm_year, p->tm_mon, p->tm_mday);
                 ptr[0] = t;
                 ptr[1] = t>>8;
-                ptr[2] = dt.hh + 6*(dt.hh/10); // hours, to BCD
-                ptr[3] = dt.mm + 6*(dt.mm/10); // minutes, to BCD
-                ptr[4] = dt.ss + 6*(dt.ss/10); // seconcds, to BCD
-#endif
+                ptr[2] = p->tm_hour + 6*(p->tm_hour/10); // hours, to BCD
+                ptr[3] = p->tm_min + 6*(p->tm_min/10);   // minutes, to BCD
+                ptr[4] = p->tm_sec + 6*(p->tm_sec/10);   // seconcds, to BCD
             }
             break;
         case 6: // set banked memory limit
@@ -172,6 +172,16 @@ int main() {
         exit(1);
     }
     fclose(fp);
+
+    if (isatty(0)) {
+        tcgetattr(0, &tiosSaved);
+        atexit(cleanup);
+
+        struct termios tios = tiosSaved;
+        cfmakeraw(&tios);
+        tcsetattr(0, TCSANOW, &tios);
+    } else
+        batchMode = 1;
 
     // start emulating
     Z80Reset(&context.state);
