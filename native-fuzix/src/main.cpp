@@ -81,9 +81,6 @@ void systemCall (Context* z, int req, int pc) {
             //  in a,(4)
             //  ret
             //printf("AF %04X BC %04X DE %04X HL %04X\n", AF, BC, DE, HL);
-            //for (int i = 0; i < 25; ++i)
-            //    printf("%02x ", mainMem[0xBE90+i]);
-            //printf("\n");
             {
                 bool out = (B & 0x80) != 0;
 #if 0
@@ -120,11 +117,11 @@ void systemCall (Context* z, int req, int pc) {
             if (C == 0) { // XXX
                 time_t now = time(0);
                 struct tm* p = localtime(&now);
-                printf("y %d m %d d %d hh %d mm %d ss %d\n",
-                    p->tm_year, p->tm_mon, p->tm_mday,
-                    p->tm_hour, p->tm_min, p->tm_sec);
+                //printf("y %d m %d d %d hh %d mm %d ss %d\n",
+                //    p->tm_year+1900, p->tm_mon+1, p->tm_mday,
+                //    p->tm_hour, p->tm_min, p->tm_sec);
                 uint8_t* ptr = mapMem(&context, HL);
-                int t = date2dr(p->tm_year, p->tm_mon, p->tm_mday);
+                int t = date2dr(p->tm_year+1900, p->tm_mon+1, p->tm_mday);
                 ptr[0] = t;
                 ptr[1] = t>>8;
                 ptr[2] = p->tm_hour + 6*(p->tm_hour/10); // hours, to BCD
@@ -164,7 +161,7 @@ int main() {
     disk_init();
 
     const char* kernel = "fuzix.bin";
-    const uint32_t origin = 0x0100;
+    const uint16_t origin = 0x0100;
 
     FILE* fp = fopen(kernel, "r");
     if (fp == 0 || fread(mapMem(&context, origin), 1, 0xFF00, fp) <= 1000) {

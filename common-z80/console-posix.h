@@ -48,7 +48,8 @@ int consoleWait (void) {
         c = getchar();
     else if (read(0, &c, 1) < 0)
         c = -1;
-    if (c < 0 || c == 0x04) {
+    //if (c < 0 || c == 0x04) {
+    if (c < 0) {
         c = 0;
         done = 1;
     }
