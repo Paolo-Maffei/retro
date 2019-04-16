@@ -5,4 +5,4 @@ For the original version, see <https://jeelabs.org/2018/cpm-on-f407-part5/>.
 
 The FUZIX OS is being adapted from the `z80pack` and `sbcv2` platforms.
 
-_Work In Progress ... boots up and shows the `init` greeting, so far._
+_Work In Progress ... boots up properly, but various issues remain._
