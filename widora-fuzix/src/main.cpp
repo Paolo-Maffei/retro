@@ -33,12 +33,16 @@ void disk_init () {
 
 void disk_read (File fp, int pos, void* buf, int len) {
     fp.seek(pos * len);
-    fp.read((uint8_t*) buf, len);
+    int e = fp.read((uint8_t*) buf, len);
+    if (e != len)
+        printf("r %d: fp %x pos %d len %d buf %x = %d\n", e, fp, pos, len, buf);
 }
 
 void disk_write (File fp, int pos, void const* buf, int len) {
     fp.seek(pos * len);
-    fp.write((const uint8_t*) buf, len);
+    int e = fp.write((const uint8_t*) buf, len);
+    if (e != len)
+        printf("W %d: fp %x pos %d len %d buf %x = %d\n", e, fp, pos, len, buf);
 }
 
 static void setBankSplit (uint8_t page) {
@@ -60,7 +64,7 @@ static void setBankSplit (uint8_t page) {
 
 void systemCall (Context* z, int req, int pc) {
     Z80_STATE* state = &(z->state);
-#if 1
+#if 0
     if (req > 3)
         printf("\treq %d AF %04x BC %04x DE %04x HL %04x SP %04x @ %d:%04x\n",
                 req, AF, BC, DE, HL, SP, context.bank, pc);
@@ -160,11 +164,11 @@ void listDir (const char * dirname) {
     File file;
     while ((file = root.openNextFile()) != 0) {
         if (!file.isDirectory())
-            printf("    %-15s %8db\n", file.name(), file.size());
-        file.close();
+            printf("    %-15s %8d\n", file.name(), file.size());
+        //file.close();
     }
 
-    root.close();
+    //root.close();
 }
 
 void setup () {
@@ -182,20 +186,21 @@ void setup () {
         if (chunkMem[i] == 0)
             printf("- can't allocate memory chunk %d\n", i);
     }
-    printf("- free mem %d b\n", ESP.getFreeHeap());
+    printf("- free mem %d\n", ESP.getFreeHeap());
 
     const uint16_t origin = 0x0100;
 
+    disk_init();
     File fp = SPIFFS.open("/fuzix.bin", "r");
     if (fp == 0 || fp.read(mapMem(&context, origin), 0xFF00) <= 1000)
         printf("- can't load fuzix\n");
-    fp.close();
+    //fp.close();
+
+    printf("- start z80emu\n");
 
     Z80Reset(&context.state);
     context.state.pc = origin;
     context.done = 0;
-
-    printf("- start emulation\n");
 
     do {
         Z80Emulate(&context.state, 2000000, &context);
