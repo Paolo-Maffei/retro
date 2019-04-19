@@ -5,11 +5,11 @@
 #define NBANKS  16  // not necessarily all usable, depends on current split
 
 typedef struct {
-    Z80_STATE	state;
-    uint8_t	done;
-    int         bank;
-    uint8_t*    split;
-    uint32_t    offset [NBANKS];
+    Z80_STATE state;
+    uint8_t   done;
+    int       bank;
+    uint8_t*  split;
+    uint32_t  offset [NBANKS];
 } Context;
 
 // defined as static in this header, so that it will be inlined where possible

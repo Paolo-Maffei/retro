@@ -13,7 +13,7 @@ extern "C" {
 
 Context context;
 uint8_t mainMem [1<<16];
-uint8_t bankMem [420*1024]; // lots of additional memory banks
+uint8_t bankMem [480*1024]; // additional memory banks
 
 FILE* disk_fp;
 

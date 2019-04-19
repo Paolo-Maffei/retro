@@ -90,8 +90,8 @@ void systemCall (Context* z, int req, int pc) {
                 for (int i = 0; i < cnt; ++i) {
                     void* mem = mapMem(&context, HL + 512*i);
 #if 1
-                    printf("HD wr %d mem %d:0x%x pos %d\n",
-                            out, context.bank, HL + 512*i, pos + i);
+                    printf("HD%d wr %d mem %d:0x%x pos %d\n",
+                            A, out, context.bank, HL + 512*i, pos + i);
 #endif
                     if (out)
                         sd.write512(pos + i, mem);
@@ -162,7 +162,7 @@ int main() {
     led.mode(Pinmode::out);
     rtc.init();
 
-    printf("\nsd card: ");
+    printf("\nsd init: ");
     spi.init();
     if (sd.init())
         printf("detected, hd=%d\n", sd.sdhc);
@@ -173,8 +173,12 @@ int main() {
     // emulated room bootstrap, loads first disk sector to 0x0000
     disk.readSector(0, mapMem(&context, 0x0000));
 #else
-    for (int i = 0; i < 127; ++i) // read 63.5K into RAM
+    printf("booting: ");
+    for (int i = 0; i < 127; ++i) { // read 63.5K into RAM
+        console.putc('.');
         sd.read512(1 + i, mapMem(&context, origin + 512*i));
+    }
+    printf("\n");
 #endif
 
     // start emulating
