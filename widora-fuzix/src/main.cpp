@@ -48,17 +48,26 @@ void disk_write (File fp, int pos, void const* buf, int len) {
 static void setBankSplit (uint8_t page) {
     context.split = mainMem + (page << 8);
     memset(context.offset, 0, sizeof context.offset);
-#if NBANKS > 1
+
     int cpb = ((page << 8) + (CHUNK_SIZE-1)) >> CHUNK_BITS; // chunks per bank
-    int n = 0;
-    for (int i = 1; i < NBANKS && n < CHUNK_TOTAL; ++i)
+    for (int i = 1, n = 0; i < NBANKS && n < NCHUNKS; ++i)
         for (int j = 0; j < cpb; ++j) {
             // the offset adjusts the calculated address to point into the chunk
             // the first <cpb> entries remain zero, i.e. use unbanked mainMem
             context.offset[cpb+n] = chunkMem[n] - mainMem - (j << CHUNK_BITS);
-            if (n++ >= CHUNK_TOTAL)
+            if (++n >= NCHUNKS)
                 break;
         }
+
+#if 1
+    printf("setBank: %02d = %04x\n", page, page << 8);
+    printf("%d offsets:\n", CHUNK_TOTAL);
+    for (int i = 0; i < CHUNK_TOTAL; ++i)
+        printf("%4d: off %9d -> %x\n",
+                i, context.offset[i], mainMem + context.offset[i]);
+    printf("%d chunks:\n", NCHUNKS);
+    for (int i = 0; i < NCHUNKS; ++i)
+        printf("%4d: %08x\n", i, chunkMem[i]);
 #endif
 }
 
@@ -74,7 +83,7 @@ void systemCall (Context* z, int req, int pc) {
             A = Serial.available() ? 0xFF : 0x00;
             break;
         case 1: // conin
-            //while (!Serial.available()) {}
+            while (!Serial.available()) {}
             A = Serial.read();
             break;
         case 2: // conout
@@ -95,12 +104,12 @@ void systemCall (Context* z, int req, int pc) {
             {
                 bool out = (B & 0x80) != 0;
                 uint8_t cnt = B & 0x7F;
-                uint32_t pos = DE;  // no skewing
+                uint16_t pos = DE;  // no skewing
                 File fp = A == 0 ? disk_fp : swap_fp;
 
                 for (int i = 0; i < cnt; ++i) {
                     void* mem = mapMem(&context, HL + 512*i);
-#if 1
+#if 0
                     printf("HD%d wr %d mem %d:0x%x pos %d\n",
                             A, out, context.bank, HL + 512*i, pos + i);
 #endif
