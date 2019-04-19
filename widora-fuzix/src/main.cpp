@@ -109,7 +109,7 @@ void systemCall (Context* z, int req, int pc) {
 
                 for (int i = 0; i < cnt; ++i) {
                     void* mem = mapMem(&context, HL + 512*i);
-#if 0
+#if 1
                     printf("HD%d wr %d mem %d:0x%x pos %d\n",
                             A, out, context.bank, HL + 512*i, pos + i);
 #endif

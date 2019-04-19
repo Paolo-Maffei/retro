@@ -17,7 +17,7 @@ typedef struct {
 
 extern uint8_t mainMem [];
 
-inline uint8_t* mapMem (void* cp, uint16_t addr) {
+static uint8_t* mapMem (void* cp, uint16_t addr) {
     uint8_t* ptr = mainMem + addr;
 #if NBANKS > 1
     Context* ctx = (Context*) cp;
