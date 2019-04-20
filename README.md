@@ -12,7 +12,7 @@ See <https://jeelabs.org/projects/retro/>.
 ├── tests
 │   └── circle407-sdcard
 │       └── src
-└── z80doc
+└── z80emu
     ├── code-z80
     ├── common-z80
     ├── cpm2-arm
@@ -28,8 +28,8 @@ See <https://jeelabs.org/projects/retro/>.
     │   └── src
     ├── fuzix-native
     │   └── src
-    ├── zexall-arm
+    ├── zexdoc-arm
     │   └── src
-    └── zexall-native
+    └── zexdoc-native
         └── src
 ```
