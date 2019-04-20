@@ -15,7 +15,7 @@ extern "C" {
 Context context;
 uint8_t mainMem [1<<16];
 
-#define NCHUNKS  32
+#define NCHUNKS 30  // 120K available, e.g. two banks of 60K
 
 uint8_t* chunkMem [NCHUNKS]; // lots of memory on ESP32, but it's fragmented!
 
@@ -36,6 +36,12 @@ void disk_read (File fp, int pos, void* buf, int len) {
     int e = fp.read((uint8_t*) buf, len);
     if (e != len)
         printf("r %d: fp %x pos %d len %d buf %x = %d\n", e, fp, pos, len, buf);
+#if 0
+    printf("\t\t\t      ");
+    for (int i = 0; i < 16; ++i)
+        printf(" %02x", ((uint8_t*) buf)[i]);
+    printf("\n");
+#endif
 }
 
 void disk_write (File fp, int pos, void const* buf, int len) {
@@ -107,16 +113,23 @@ void systemCall (Context* z, int req, int pc) {
                 uint16_t pos = DE;  // no skewing
                 File fp = A == 0 ? disk_fp : swap_fp;
 
+                // use intermediate buffer in case I/O spans different chunks
+                uint8_t buf [512];
                 for (int i = 0; i < cnt; ++i) {
-                    void* mem = mapMem(&context, HL + 512*i);
 #if 1
+                    void* mem = mapMem(&context, HL + 512*i);
                     printf("HD%d wr %d mem %d:0x%x pos %d\n",
                             A, out, context.bank, HL + 512*i, pos + i);
 #endif
-                    if (out)
-                        disk_write(fp, pos + i, mem, 512);
-                    else
-                        disk_read(fp, pos + i, mem, 512);
+                    if (out) {
+                        for (int j = 0; j < sizeof buf; ++j)
+                            buf[j] = *mapMem(&context, HL + 512*i + j);
+                        disk_write(fp, pos + i, buf, 512);
+                    } else {
+                        disk_read(fp, pos + i, buf, 512);
+                        for (int j = 0; j < sizeof buf; ++j)
+                            *mapMem(&context, HL + 512*i + j) = buf[j];
+                    }
                 }
             }
             A = 0;
