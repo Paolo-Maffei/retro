@@ -2,7 +2,7 @@ See <https://jeelabs.org/projects/retro/>.
 
 ## Repository layout
 
-```
+```text
 .
 ├── blink
 │   ├── arm
