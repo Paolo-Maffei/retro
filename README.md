@@ -4,12 +4,11 @@ See <https://jeelabs.org/projects/retro/>.
 
 ```text
 .
-├── blink
-│   ├── arm
-│   │   └── src
-│   └── esp
-│       └── src
 ├── tests
+│   ├── blink-arm
+│   │   └── src
+│   └── blink-esp
+│       └── src
 │   └── circle407-sdcard
 │       └── src
 └── z80emu
