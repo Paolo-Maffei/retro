@@ -13,7 +13,7 @@ const uint8_t rom [] = {
 
 Context context;
 
-void systemCall (Context *ctx, int) {
+void systemCall (Context *ctx, int, uint16_t) {
     auto& regs = ctx->state.registers;
 
     // emulate CP/M bdos calls from 0x0005, register C functions 2 and 9

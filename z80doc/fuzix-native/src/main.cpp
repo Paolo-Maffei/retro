@@ -152,7 +152,7 @@ void systemCall (Context* z, int req, int pc) {
             break;
         }
         default:
-            printf("syscall %d @ %04x ?\r\n", req, state->pc);
+            printf("syscall %d @ %04x ?\r\n", req, pc);
             exit(2);
     }
 }

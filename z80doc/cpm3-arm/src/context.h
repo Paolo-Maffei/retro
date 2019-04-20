@@ -12,8 +12,6 @@ typedef struct {
     uint32_t    offset [NBANKS];
 } Context;
 
-extern void systemCall (Context *ctx, int request);
-
 // defined as static in this header, so that it will be inlined where possible
 static uint8_t* mapMem (void* cp, uint16_t addr) {
     uint8_t* ptr = MAINMEM + addr;
@@ -24,3 +22,5 @@ static uint8_t* mapMem (void* cp, uint16_t addr) {
 #endif
     return ptr;
 }
+
+extern void systemCall (Context *ctx, int request, uint16_t pc);

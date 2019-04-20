@@ -16,28 +16,20 @@ See <https://jeelabs.org/projects/retro/>.
     ├── code-z80
     ├── common-z80
     ├── cpm2-arm
-    │   ├── include -> ../common-z80
     │   └── src
     ├── cpm2-native
-    │   ├── include -> ../common-z80
     │   └── src
     ├── cpm3-arm
-    │   ├── include -> ../common-z80
     │   └── src
     ├── fuzix-arm
-    │   ├── include -> ../common-z80
     │   └── src
     ├── fuzix-esp
     │   ├── data
-    │   ├── include -> ../common-z80
     │   └── src
     ├── fuzix-native
-    │   ├── include -> ../common-z80
     │   └── src
     ├── zexall-arm
-    │   ├── include -> ../common-z80
     │   └── src
     └── zexall-native
-        ├── include -> ../common-z80
         └── src
 ```

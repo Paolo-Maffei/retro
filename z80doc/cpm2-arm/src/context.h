@@ -12,4 +12,4 @@ inline uint8_t* mapMem (void* cp, uint16_t addr) {
     return CCMEM + addr;
 }
 
-extern void systemCall (Context *ctx, int request);
+extern void systemCall (Context *ctx, int request, uint16_t pc);

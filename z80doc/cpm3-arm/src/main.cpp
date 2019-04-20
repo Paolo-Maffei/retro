@@ -48,7 +48,7 @@ static void setBankSplit (uint8_t page) {
 #endif
 }
 
-void systemCall (Context* z, int req) {
+void systemCall (Context* z, int req, uint16_t pc) {
     Z80_STATE* state = &(z->state);
     //printf("req %d A %d\n", req, A);
     switch (req) {
@@ -118,7 +118,7 @@ void systemCall (Context* z, int req) {
             context.bank = A % NBANKS;
             break;
         default:
-            printf("syscall %d @ %04x ?\n", req, state->pc);
+            printf("syscall %d @ %04x ?\n", req, pc);
             while (1) {}
     }
 }

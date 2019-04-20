@@ -151,7 +151,7 @@ void systemCall (Context* z, int req, int pc) {
             break;
         }
         default:
-            printf("syscall %d @ %04x ?\n", req, state->pc);
+            printf("syscall %d @ %04x ?\n", req, pc);
             while (1) {}
     }
 }
