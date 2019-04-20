@@ -17,10 +17,10 @@ int printf(const char* fmt, ...) {
     return 0;
 }
 
-PinA<6> led;
+PinC<13> led;
 Context context;
 
-void systemCall (Context *ctx, int) {
+void systemCall (Context *ctx, int, int) {
     auto& regs = ctx->state.registers;
 
     // emulate CP/M bdos calls from 0x0005, register C functions 2 and 9
@@ -39,21 +39,26 @@ void systemCall (Context *ctx, int) {
 
 int main() {
     console.init();
-    console.baud(115200, fullSpeedClock()/2);
+#if BLUEPILL
+    int usartBusHz = fullSpeedClock();
+#else
+    int usartBusHz = fullSpeedClock() / 2; // usart bus runs at 84 iso 168 MHz
+#endif
+    console.baud(115200, usartBusHz);
     led.mode(Pinmode::out);
 
-    memcpy(mapMem(&context, 0x100), rom, sizeof rom);
+    memcpy(context.mem + 0x100, rom, sizeof rom);
 
     // Patch the memory of the program. Reset at 0x0000 is trapped by an
     // OUT which will stop emulation. CP/M bdos call 5 is trapped by an IN.
     // See Z80_INPUT_BYTE() and Z80_OUTPUT_BYTE() definitions in z80user.h.
 
-    *mapMem(&context, 0) = 0xd3;       // OUT N, A
-    *mapMem(&context, 1) = 0x00;
+    context.mem[0] = 0xd3;       // OUT N, A
+    context.mem[1] = 0x00;
 
-    *mapMem(&context, 5) = 0xdb;       // IN A, N
-    *mapMem(&context, 6) = 0x00;
-    *mapMem(&context, 7) = 0xc9;       // RET
+    context.mem[5] = 0xdb;       // IN A, N
+    context.mem[6] = 0x00;
+    context.mem[7] = 0xc9;       // RET
 
     // start emulating
 
