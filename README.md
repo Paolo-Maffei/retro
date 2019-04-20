@@ -12,8 +12,8 @@ See <https://jeelabs.org/projects/retro/>.
 │   └── circle407-sdcard
 │       └── src
 └── z80emu
-    ├── code-z80
-    ├── common-z80
+    ├── asm
+    ├── common
     ├── cpm2-arm
     │   └── src
     ├── cpm2-native
