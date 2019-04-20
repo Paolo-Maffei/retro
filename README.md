@@ -7,8 +7,7 @@ See <https://jeelabs.org/projects/retro/>.
 ├── tests
 │   ├── blink-arm
 │   │   └── src
-│   ├── blink-esp
-│   │   └── src
+│   ...
 │   └── circle407-sdcard
 │       └── src
 └── z80emu
@@ -18,15 +17,7 @@ See <https://jeelabs.org/projects/retro/>.
     │   └── src
     ├── cpm2-native
     │   └── src
-    ├── cpm3-arm
-    │   └── src
-    ├── fuzix-arm
-    │   └── src
-    ├── fuzix-esp
-    │   ├── data
-    │   └── src
-    ├── fuzix-native
-    │   └── src
+    ...
     ├── zexdoc-arm
     │   └── src
     └── zexdoc-native
