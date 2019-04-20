@@ -1,31 +1,30 @@
 #include <jee.h>
-#include <jee/usb.h>
 
-UsbDev console;
+UartBufDev< PinA<9>, PinA<10> > console;
 
 int printf(const char* fmt, ...) {
     va_list ap; va_start(ap, fmt); veprintf(console.putc, fmt, ap); va_end(ap);
     return 0;
 }
 
-#if BLACK407
+#if BLUEPILL || CIRCLE407
+PinB<9> led;
+#elif BLACK407
 PinA<6> led;
 #elif DIYMORE
 PinE<0> led;
 #endif
 
 int main() {
-    fullSpeedClock();
     console.init();
+    enableSysTick();
     led.mode(Pinmode::out);
 
-    uint32_t last = 0;
     while (true) {
-        if (last != ticks / 500) {
-            last = ticks / 500;
-            printf("%d\n", ticks);
-            led.toggle();
-        }
-        console.poll();
+        printf("%d\n", ticks);
+        led = 0;
+        wait_ms(100);
+        led = 1;
+        wait_ms(400);
     }
 }
