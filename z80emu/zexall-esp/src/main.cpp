@@ -14,7 +14,12 @@ const uint8_t rom [] = {
 #include "zexall.h"
 };
 
+#if LOLIN32
 constexpr int LED = 5;
+#else
+constexpr int LED = BUILTIN_LED;
+#endif
+
 Context context;
 
 void systemCall (Context *ctx, int, uint16_t) {
