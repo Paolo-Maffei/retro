@@ -2,6 +2,8 @@
 
 #if LOLIN32
 constexpr int LED = 22; // not 5!
+#elif WROVER
+constexpr int LED = 5; // no built-in, use the LCD backlight
 #else
 constexpr int LED = BUILTIN_LED;
 #endif
@@ -9,8 +11,9 @@ constexpr int LED = BUILTIN_LED;
 void setup() {
     Serial.begin(115200);
     delay(1000);
+#ifdef BUILTIN_LED
     Serial.printf("BUILTIN_LED = %d\n", BUILTIN_LED);
-    delay(1000);
+#endif
     pinMode(LED, OUTPUT);
 }
 
