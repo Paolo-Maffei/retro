@@ -167,7 +167,7 @@ tests:
         dw      stabd
         dw      0
 
-tstr:   macro   insn,memop,iy,ix,hl,de,bc,flags,acc,sp
+tstr    macro   insn,memop,iy,ix,hl,de,bc,flags,acc,sp
         local   lab
 &lab:   db      insn
         ds      &lab+4-$,0
@@ -180,7 +180,7 @@ tstr:   macro   insn,memop,iy,ix,hl,de,bc,flags,acc,sp
         endif
         endm
 
-tmsg:   macro   m
+tmsg    macro   m
         local   lab
 &lab:   db      m
         if      $ ge &lab+30

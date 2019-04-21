@@ -1216,7 +1216,7 @@ CCPSTACK  EQU   $       ;end of ccp stack area.
 ;   Batch (or SUBMIT) processing information storage.
 ;
 BATCH:   DB     0               ;batch mode flag (0=not active).
-BATCHFCB:  DB   0,
+BATCHFCB:  DB   0
          DB   "$$$     SUB"
          DB 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 ;
