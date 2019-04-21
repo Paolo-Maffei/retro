@@ -18,8 +18,8 @@ See <https://jeelabs.org/projects/retro/>.
     ├── cpm2-native
     │   └── src
     ...
-    ├── zexdoc-arm
+    ├── zexall-arm
     │   └── src
-    └── zexdoc-native
+    └── zexall-native
         └── src
 ```
