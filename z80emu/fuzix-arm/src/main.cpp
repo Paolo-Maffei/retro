@@ -85,11 +85,14 @@ void systemCall (Context* z, int req, int pc) {
                 }
 #else
                 uint8_t cnt = B & 0x7F;
-                uint32_t pos = 65536*A + DE + 2048;  // no skewing
+                uint32_t pos = 16384*A + DE + 2048;  // no skewing
 
                 for (int i = 0; i < cnt; ++i) {
                     void* mem = mapMem(&context, HL + 512*i);
 #if 1
+                    printf("%c%d", out ? 'W' : 'r', context.bank);
+#endif
+#if 0
                     printf("HD%d wr %d mem %d:0x%x pos %d\n",
                             A, out, context.bank, HL + 512*i, pos + i);
 #endif
@@ -104,6 +107,7 @@ void systemCall (Context* z, int req, int pc) {
             break;
         case 5: { // time get/set
             if (C == 0) {
+#if 0
                 RTC::DateTime dt = rtc.get();
                 //printf("mdy %02d/%02d/20%02d %02d:%02d:%02d (%d ms)\n",
                 //        dt.mo, dt.dy, dt.yr, dt.hh, dt.mm, dt.ss, ticks);
@@ -115,7 +119,6 @@ void systemCall (Context* z, int req, int pc) {
                 ptr[3] = dt.mm + 6*(dt.mm/10); // minutes, to BCD
                 ptr[4] = dt.ss + 6*(dt.ss/10); // seconcds, to BCD
             } else {
-#if 0
                 RTC::DateTime dt;
                 uint8_t* ptr = mapMem(&context, HL);
                 // TODO set clock date & time
