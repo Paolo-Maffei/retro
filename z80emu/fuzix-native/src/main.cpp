@@ -131,6 +131,12 @@ void systemCall (Context* z, int req, int pc) {
             break;
         case 6: // set banked memory limit
             setBankSplit(A);
+            if (A > 0) {
+                A = sizeof bankMem / (A * 256);
+                if (A > NBANKS)
+                    A = NBANKS;
+                ++A; // mainMem is also a bank
+            }
             break;
         case 7: { // select bank and return previous setting
             uint8_t prevBank = context.bank;
@@ -151,6 +157,14 @@ void systemCall (Context* z, int req, int pc) {
             HL += BC;
             break;
         }
+        case 9: // dump all main registers
+            printf(
+    " [AF:%04X BC:%04X DE:%04X HL:%04X IX:%04X IY:%04X SP:%04X PC:%04X]\r\n",
+                AF, BC, DE, HL,
+                state->registers.word[Z80_IX],
+                state->registers.word[Z80_IY],
+                SP, pc);
+            break;
         default:
             printf("syscall %d @ %04x ?\r\n", req, pc);
             exit(2);
