@@ -7,11 +7,11 @@ void setup() {
     printf("\n");
 
 #ifdef BUILTIN_LED
-    printf("BUILTIN_LED = %d\n", BUILTIN_LED);
+    printf("BUILTIN_LED     %d\n", BUILTIN_LED);
 #endif
 
-    uint64_t chipid = ESP.getEfuseMac();
     //The chip ID is essentially its MAC address(length: 6 bytes).
+    uint64_t chipid = ESP.getEfuseMac();
     printf("ESP32 Chip ID   %04X%08X\n",
             (uint16_t) (chipid>>32), (uint32_t) chipid);
     printf("\n");
