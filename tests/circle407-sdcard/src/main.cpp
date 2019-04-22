@@ -1,4 +1,5 @@
 // Very basic test of the SD-card driver in the JeeH library.
+// wARNING: This will destroy the contents on the SD card.
 
 #include <jee.h>
 #include <jee/spi-sdcard.h>
@@ -25,11 +26,26 @@ int main() {
     if (sd.init())
         printf("detected, hd=%d\n", sd.sdhc);
 
-    while (1) {
-        printf("%d\n", ticks);
-        led = 0;
-        wait_ms(100);
-        led = 1;
-        wait_ms(400);
+    uint8_t buf [512];
+
+    for (int block = 0; ; block += 256) {
+        printf("\nblock = %d: ", block);
+
+        memset(buf, 0, sizeof buf);
+        for (int i = 0; i < 256; ++i) {
+            buf[i] = i;
+            buf[i+256] = block;
+            sd.write512(block + i, buf);
+            console.putc('.');
+            led.toggle();
+        }
+
+        memset(buf, 0, sizeof buf);
+        for (int i = 0; i < 256; ++i) {
+            sd.read512(block + i, buf);
+            bool ok = buf[i] == i && buf[i+256] == (uint8_t) block;
+            console.putc(ok ? '+' : '?');
+            led.toggle();
+        }
     }
 }
