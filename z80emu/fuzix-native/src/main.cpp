@@ -132,10 +132,9 @@ void systemCall (Context* z, int req, int pc) {
         case 6: // set banked memory limit
             setBankSplit(A);
             if (A > 0) {
-                A = sizeof bankMem / (A * 256);
-                if (A > NBANKS)
-                    A = NBANKS;
-                ++A; // mainMem is also a bank
+                int n = sizeof bankMem / (A << 8);
+                ++n; // mainMem is also a bank
+                A = n < NBANKS ? n : NBANKS;
             }
             break;
         case 7: { // select bank and return previous setting
