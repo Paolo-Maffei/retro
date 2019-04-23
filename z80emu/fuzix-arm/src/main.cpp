@@ -165,9 +165,10 @@ int main() {
     printf("\nsd init: ");
     spi.init();
     if (sd.init())
-        printf("detected, hd=%d\n", sd.sdhc);
+        printf("detected, sdhc=%d\n", sd.sdhc);
 
     // switch to full speed, now that the SD card has been inited
+    wait_ms(10); // let serial output drain
     console.baud(115200, fullSpeedClock()/2);
 
     const uint16_t origin = 0x0100;
