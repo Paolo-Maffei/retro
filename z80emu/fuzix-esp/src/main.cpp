@@ -11,6 +11,14 @@ extern "C" {
 #include "macros.h"
 }
 
+#if LOLIN32
+constexpr int LED = 22; // not 5!
+#elif WROVER
+constexpr int LED = 5; // no built-in, use the LCD backlight
+#else
+constexpr int LED = BUILTIN_LED;
+#endif
+
 Context context;
 uint8_t mainMem [1<<16];
 
@@ -23,16 +31,16 @@ File swap_fp;
 
 void disk_init () {
     disk_fp = SPIFFS.open("/rootfs.img", "r+");
-    if (disk_fp == 0)
+    if (!disk_fp)
         printf("- can't open root\n");
     swap_fp = SPIFFS.open("/swap.img", "r+");
-    if (swap_fp == 0)
+    if (!swap_fp)
         printf("- can't open swap\n");
 }
 
-void disk_read (File fp, int pos, void* buf, int len) {
-    fp.seek(pos * len);
-    int e = fp.read((uint8_t*) buf, len);
+void disk_read (File* fp, int pos, void* buf, int len) {
+    fp->seek(pos * len);
+    int e = fp->read((uint8_t*) buf, len);
     if (e != len)
         printf("r %d: fp %x pos %d len %d buf %x = %d\n", e, fp, pos, len, buf);
 #if 0
@@ -43,9 +51,9 @@ void disk_read (File fp, int pos, void* buf, int len) {
 #endif
 }
 
-void disk_write (File fp, int pos, void const* buf, int len) {
-    fp.seek(pos * len);
-    int e = fp.write((const uint8_t*) buf, len);
+void disk_write (File* fp, int pos, void const* buf, int len) {
+    fp->seek(pos * len);
+    int e = fp->write((const uint8_t*) buf, len);
     if (e != len)
         printf("W %d: fp %x pos %d len %d buf %x = %d\n", e, fp, pos, len, buf);
 }
@@ -64,7 +72,7 @@ static void setBankSplit (uint8_t page) {
                 break;
         }
 
-#if 1
+#if 0
     printf("setBank: %02d = %04x\n", page, page << 8);
     printf("%d offsets:\n", CHUNK_TOTAL);
     for (int i = 0; i < CHUNK_TOTAL; ++i)
@@ -110,13 +118,13 @@ void systemCall (Context* z, int req, int pc) {
                 bool out = (B & 0x80) != 0;
                 uint8_t cnt = B & 0x7F;
                 uint16_t pos = DE;  // no skewing
-                File fp = A == 0 ? disk_fp : swap_fp;
+                File* fp = A == 0 ? &disk_fp : &swap_fp;
 
                 // use intermediate buffer in case I/O spans different chunks
                 uint8_t buf [512];
                 for (int i = 0; i < cnt; ++i) {
 #if 1
-                    void* mem = mapMem(&context, HL + 512*i);
+                    //void* mem = mapMem(&context, HL + 512*i);
                     printf("HD%d wr %d mem %d:0x%x pos %d\n",
                             A, out, context.bank, HL + 512*i, pos + i);
 #endif
@@ -194,6 +202,7 @@ void listDir (const char * dirname) {
 
 void setup () {
     Serial.begin(115200);
+    pinMode(LED, OUTPUT);
 
     if (SPIFFS.begin(true))
         printf("- SPIFFS mounted:\n");
@@ -212,12 +221,22 @@ void setup () {
     const uint16_t origin = 0x0100;
 
     disk_init();
-    File fp = SPIFFS.open("/fuzix.bin", "r");
-    if (fp == 0 || fp.read(mapMem(&context, origin), 0xFF00) <= 1000)
-        printf("- can't load fuzix\n");
-    //fp.close();
 
-    printf("- start z80emu\n");
+    File fp = SPIFFS.open("/fuzix.bin", "r");
+    if (fp == 0)
+        printf("- can't open fuzix.bin\n");
+    for (uint16_t pos = origin; ; pos += 256) {
+        int e = fp.read(mapMem(&context, pos), 256);
+        if (e < 0)
+            printf("- error reading fuzix.bin\n");
+        if (e <= 0)
+            break;
+        printf(".");
+    }
+    fp.close();
+    printf("\n");
+
+    printf("- start z80emu %d\n");
 
     Z80Reset(&context.state);
     context.state.pc = origin;
@@ -225,6 +244,7 @@ void setup () {
 
     do {
         Z80Emulate(&context.state, 2000000, &context);
+        digitalWrite(LED, !digitalRead(LED));
     } while (!context.done);
 
     printf("\n- done @ %04x\n", context.state.pc);
