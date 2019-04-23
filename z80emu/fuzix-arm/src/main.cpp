@@ -158,7 +158,7 @@ void systemCall (Context* z, int req, int pc) {
 
 int main() {
     console.init();
-    console.baud(115200, fullSpeedClock()/2);
+    enableSysTick();
     led.mode(Pinmode::out);
     rtc.init();
 
@@ -166,6 +166,9 @@ int main() {
     spi.init();
     if (sd.init())
         printf("detected, hd=%d\n", sd.sdhc);
+
+    // switch to full speed, now that the SD card has been inited
+    console.baud(115200, fullSpeedClock()/2);
 
     const uint16_t origin = 0x0100;
 
