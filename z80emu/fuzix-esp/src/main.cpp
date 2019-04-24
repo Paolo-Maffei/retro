@@ -1,4 +1,5 @@
 #include "SPIFFS.h"
+#include "SD.h"
 
 #define printf Serial.printf
 
@@ -15,6 +16,8 @@ extern "C" {
 constexpr int LED = 22; // not 5!
 #elif WROVER
 constexpr int LED = 5; // no built-in, use the LCD backlight
+#elif TTGOT8
+constexpr int LED = 21; // reusing wrover board def
 #else
 constexpr int LED = BUILTIN_LED;
 #endif
@@ -29,11 +32,11 @@ uint8_t* chunkMem [NCHUNKS]; // lots of memory on ESP32, but it's fragmented!
 File disk_fp;
 File swap_fp;
 
-void disk_init () {
-    disk_fp = SPIFFS.open("/rootfs.img", "r+");
+void disk_init (fs::FS &fs) {
+    disk_fp = fs.open("/rootfs.img", "r+");
     if (!disk_fp)
         printf("- can't open root\n");
-    swap_fp = SPIFFS.open("/swap.img", "r+");
+    swap_fp = fs.open("/swap.img", "r+");
     if (!swap_fp)
         printf("- can't open swap\n");
 }
@@ -123,7 +126,7 @@ void systemCall (Context* z, int req, int pc) {
                 // use intermediate buffer in case I/O spans different chunks
                 uint8_t buf [512];
                 for (int i = 0; i < cnt; ++i) {
-#if 1
+#if 0
                     //void* mem = mapMem(&context, HL + 512*i);
                     printf("HD%d wr %d mem %d:0x%x pos %d\n",
                             A, out, context.bank, HL + 512*i, pos + i);
@@ -185,8 +188,8 @@ void systemCall (Context* z, int req, int pc) {
     }
 }
 
-void listDir (const char * dirname) {
-    File root = SPIFFS.open(dirname);
+void listDir (fs::FS &fs, const char * dirname) {
+    File root = fs.open(dirname);
     if (!root || !root.isDirectory())
         printf("- can't open root dir\n");
 
@@ -204,15 +207,51 @@ void setup () {
     Serial.begin(115200);
     pinMode(LED, OUTPUT);
 
+#if TTGOT8
+    SPI.begin(14, 2, 15, 13);
+
+    if(!SD.begin(13)){
+        Serial.println("Card Mount Failed");
+        return;
+    }
+    uint8_t cardType = SD.cardType();
+
+    if(cardType == CARD_NONE){
+        Serial.println("No SD card attached");
+        return;
+    }
+
+    Serial.print("SD Card Type: ");
+    if(cardType == CARD_MMC){
+        Serial.println("MMC");
+    } else if(cardType == CARD_SD){
+        Serial.println("SDSC");
+    } else if(cardType == CARD_SDHC){
+        Serial.println("SDHC");
+    } else {
+        Serial.println("UNKNOWN");
+    }
+
+    uint64_t cardSize = SD.cardSize() / (1024 * 1024);
+    printf("SD Card Size: %lluMB\n", cardSize);
+
+    listDir(SD, "/");
+#else
     if (SPIFFS.begin(true))
         printf("- SPIFFS mounted:\n");
-    listDir("/");
+
+    listDir(SPIFFS, "/");
+#endif
 
     // ESP32 heap memory is very fragmented, must allocate lots of small chunks
 
     //printf("- free %d max %d\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
     for (int i = 0; i < NCHUNKS; ++i) {
+#if TTGOT8
+        chunkMem[i] = (uint8_t*) ps_malloc(CHUNK_SIZE);
+#else
         chunkMem[i] = (uint8_t*) malloc(CHUNK_SIZE);
+#endif
         if (chunkMem[i] == 0)
             printf("- can't allocate memory chunk %d\n", i);
     }
@@ -220,9 +259,14 @@ void setup () {
 
     const uint16_t origin = 0x0100;
 
-    disk_init();
-
+#if TTGOT8
+    disk_init(SD);
+    File fp = SD.open("/fuzix.bin", "r");
+#else
+    disk_init(SPIFFS);
     File fp = SPIFFS.open("/fuzix.bin", "r");
+#endif
+
     if (fp == 0)
         printf("- can't open fuzix.bin\n");
     for (uint16_t pos = origin; ; pos += 256) {

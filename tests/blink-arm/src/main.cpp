@@ -7,7 +7,9 @@ int printf(const char* fmt, ...) {
     return 0;
 }
 
-#if BLUEPILL || CIRCLE407
+#if BLUEPILL
+PinC<13> led;
+#elif CIRCLE407
 PinB<9> led;
 #elif BLACK407
 PinA<6> led;
