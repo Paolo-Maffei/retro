@@ -1,6 +1,7 @@
 #include "SPIFFS.h"
 #include "SD.h"
 #include "spiflash-wear.h"
+#include "esp_partition.h"
 
 #define printf Serial.printf
 
@@ -23,51 +24,84 @@ constexpr int LED = 21; // reusing wrover board def
 constexpr int LED = BUILTIN_LED;
 #endif
 
+#if TTGOT8
+#define MYFS SD
+#else
+#define MYFS SPIFFS
+#endif
+
 #define BLKSZ 512
 
-Context context;
 uint8_t mainMem [1<<16];
 
 #define NCHUNKS 45  // 180K available, e.g. three banks of 60K
 uint8_t* chunkMem [NCHUNKS]; // lots of memory on ESP32, but it's fragmented!
 
-File disk_fp;
-File swap_fp;
+struct MappedDisk {
+    File* fp;
 
-void disk_init (fs::FS &fs) {
-    disk_fp = fs.open("/rootfs.img", "r+");
-    if (!disk_fp)
-        printf("- can't open root\n");
-    swap_fp = fs.open("/swap.img", "r+");
-    if (!swap_fp)
-        printf("- can't open swap\n");
-}
+    void init (File* fptr) {
+        fp = fptr;
+    }
 
-void disk_readBlock (File* fp, int pos, void* buf) {
-    fp->seek(pos * BLKSZ);
-    int e = fp->read((uint8_t*) buf, BLKSZ);
-    if (e != BLKSZ)
-        printf("r %d? fp %08x pos %d buf %08x\n",
-                e, (int32_t) fp, pos, (int32_t) buf);
+    void readBlock (int pos, void* buf) {
+        fp->seek(pos * BLKSZ);
+        int e = fp->read((uint8_t*) buf, BLKSZ);
+        if (e != BLKSZ)
+            printf("r %d? fp %08x pos %d buf %08x\n",
+                    e, (int32_t) fp, pos, (int32_t) buf);
 #if 0
-    printf("\t\t\t      ");
-    for (int i = 0; i < 16; ++i)
-        printf(" %02x", ((uint8_t*) buf)[i]);
-    printf("\n");
+        printf("\t\t\t      ");
+        for (int i = 0; i < 16; ++i)
+            printf(" %02x", ((uint8_t*) buf)[i]);
+        printf("\n");
 #endif
-}
+    }
 
-void disk_writeBlock (File* fp, int pos, void const* buf) {
-    fp->seek(pos * BLKSZ);
-    int e = fp->write((const uint8_t*) buf, BLKSZ);
-    if (e != BLKSZ)
-        printf("W %d? fp %08x pos %d buf %08x\n",
-                e, (int32_t) fp, pos, (int32_t) buf);
-}
+    void writeBlock (int pos, void const* buf) {
+        fp->seek(pos * BLKSZ);
+        int e = fp->write((const uint8_t*) buf, BLKSZ);
+        if (e != BLKSZ)
+            printf("W %d? fp %08x pos %d buf %08x\n",
+                    e, (int32_t) fp, pos, (int32_t) buf);
+    }
+} rootDisk, swapDisk;
 
-static void setBankSplit (uint8_t page) {
-    context.split = mainMem + (page << 8);
-    memset(context.offset, 0, sizeof context.offset);
+struct FlashMemory {
+    constexpr static uint32_t pageSize = 4096;
+
+    static uint32_t base;
+
+    static void init (uint32_t off) {
+        base = off;
+    }
+
+    static void read (int pos, void* buf, int len) {
+        int e = base == 0 ? -1 : spi_flash_read(base + pos, buf, len);
+        if (e != 0)
+            printf("flash write %d?\n", e);
+    }
+
+    static void write (int pos, void const* buf, int len) {
+        int e = base == 0 ? -1 : spi_flash_write(base + pos, buf, len);
+        if (e != 0)
+            printf("flash write %d?\n", e);
+    }
+
+    static void erase (int pos) {
+        int e = base == 0 ? -1 : spi_flash_erase_range(base + pos, pageSize);
+        if (e != 0)
+            printf("flash write %d?\n", e);
+    }
+};
+
+uint32_t FlashMemory::base = 0;
+
+SpiFlashWear<FlashMemory,512> swapInFlash;
+
+static void setBankSplit (Context* z, uint8_t page) {
+    z->split = mainMem + (page << 8);
+    memset(z->offset, 0, sizeof z->offset);
 
     int cpb = ((page << 8) + CHUNK_SIZE - 1) / CHUNK_SIZE; // chunks per bank
     // for each bank 1..up, assign as many chunks as needed for that bank
@@ -76,15 +110,15 @@ static void setBankSplit (uint8_t page) {
             // the offset adjusts the calculated address to point into the chunk
             // the first <cpb> entries remain zero, i.e. use unbanked mainMem
             int pos = i * CHUNK_COUNT + j;
-            context.offset[pos] = chunkMem[n] - mainMem - j * CHUNK_SIZE;
+            z->offset[pos] = chunkMem[n] - mainMem - j * CHUNK_SIZE;
             if (++n >= NCHUNKS)
                 break;
         }
 
     // number of fully populated banks, incl main mem
-    context.nbanks = NCHUNKS / cpb + 1;
-    if (context.nbanks > NBANKS)
-        context.nbanks = NBANKS;
+    z->nbanks = NCHUNKS / cpb + 1;
+    if (z->nbanks > NBANKS)
+        z->nbanks = NBANKS;
 
 #if 0
     printf("setBank %02d=%04x, CHUNK_SIZE %d, NBANKS %d, NCHUNKS %d, cpb %d\n",
@@ -95,15 +129,15 @@ static void setBankSplit (uint8_t page) {
     printf("%d offsets:\n", CHUNK_TOTAL);
     for (int i = 0; i < CHUNK_TOTAL; ++i)
         printf("%4d: off %9d -> %x\n",
-                i, context.offset[i], mainMem + context.offset[i]);
+                i, z->offset[i], mainMem + z->offset[i]);
     for (int b = 0; b < NBANKS; ++b) {
         printf("bank %d test:", b);
-        context.bank = b;
+        z->bank = b;
         for (int i = 0; i < 6; ++i)
-            printf(" %08x", mapMem(&context, 1024 * i));
+            printf(" %08x", mapMem(z, 1024 * i));
         printf("\n");
     }
-    context.bank = 0;
+    z->bank = 0;
 #endif
 }
 
@@ -112,7 +146,7 @@ void systemCall (Context* z, int req, int pc) {
 #if 0
     if (req > 3)
         printf("\treq %d AF %04x BC %04x DE %04x HL %04x SP %04x @ %d:%04x\n",
-                req, AF, BC, DE, HL, SP, context.bank, pc);
+                req, AF, BC, DE, HL, SP, z->bank, pc);
 #endif
     switch (req) {
         case 0: // coninst
@@ -126,8 +160,8 @@ void systemCall (Context* z, int req, int pc) {
             Serial.write(C);
             break;
         case 3: // constr
-            for (uint16_t i = DE; *mapMem(&context, i) != 0; i++)
-                Serial.write(*mapMem(&context, i));
+            for (uint16_t i = DE; *mapMem(z, i) != 0; i++)
+                Serial.write(*mapMem(z, i));
             break;
         case 4: // read/write
             //  ld a,(sekdrv)
@@ -141,24 +175,33 @@ void systemCall (Context* z, int req, int pc) {
                 bool out = (B & 0x80) != 0;
                 uint8_t cnt = B & 0x7F;
                 uint16_t pos = DE;  // no skewing
-                File* fp = A == 0 ? &disk_fp : &swap_fp;
 
                 // use intermediate buffer in case I/O spans different chunks
                 uint8_t buf [BLKSZ];
                 for (int i = 0; i < cnt; ++i) {
 #if 0
-                    //void* mem = mapMem(&context, HL + BLKSZ*i);
+                    //void* mem = mapMem(z, HL + BLKSZ*i);
                     printf("HD%d wr %d mem %d:0x%x pos %d\n",
-                            A, out, context.bank, HL + BLKSZ*i, pos + i);
+                            A, out, z->bank, HL + BLKSZ*i, pos + i);
 #endif
                     if (out) {
                         for (int j = 0; j < sizeof buf; ++j)
-                            buf[j] = *mapMem(&context, HL + BLKSZ*i + j);
-                        disk_writeBlock(fp, pos + i, buf);
+                            buf[j] = *mapMem(z, HL + BLKSZ*i + j);
+                        if (A == 0)
+                            rootDisk.writeBlock(pos + i, buf);
+                        else if (FlashMemory::base == 0)
+                            swapDisk.writeBlock(pos + i, buf);
+                        else
+                            swapInFlash.writeBlock(pos + i, buf);
                     } else {
-                        disk_readBlock(fp, pos + i, buf);
+                        if (A == 0)
+                            rootDisk.readBlock(pos + i, buf);
+                        else if (FlashMemory::base == 0)
+                            swapDisk.readBlock(pos + i, buf);
+                        else
+                            swapInFlash.readBlock(pos + i, buf);
                         for (int j = 0; j < sizeof buf; ++j)
-                            *mapMem(&context, HL + BLKSZ*i + j) = buf[j];
+                            *mapMem(z, HL + BLKSZ*i + j) = buf[j];
                     }
                 }
             }
@@ -170,7 +213,7 @@ void systemCall (Context* z, int req, int pc) {
                 RTC::DateTime dt = rtc.get();
                 //printf("mdy %02d/%02d/20%02d %02d:%02d:%02d (%d ms)\n",
                 //        dt.mo, dt.dy, dt.yr, dt.hh, dt.mm, dt.ss, ticks);
-                uint8_t* ptr = mapMem(&context, HL);
+                uint8_t* ptr = mapMem(z, HL);
                 int t = date2dr(dt.yr, dt.mo, dt.dy);
                 ptr[0] = t;
                 ptr[1] = t>>8;
@@ -181,22 +224,22 @@ void systemCall (Context* z, int req, int pc) {
 #endif
             break;
         case 6: // set banked memory limit, return number available
-            setBankSplit(A);
-            A = context.nbanks;
+            setBankSplit(z, A);
+            A = z->nbanks;
             break;
         case 7: { // select bank and return previous setting
-            uint8_t prevBank = context.bank;
-            context.bank = A;
+            uint8_t prevBank = z->bank;
+            z->bank = A;
             A = prevBank;
             break;
         }
         case 8: { // for use in xmove, inter-bank copying
             uint8_t *src = mainMem + DE, *dst = mainMem + HL;
             // never map above the split, i.e. in the common area
-            if (dst < context.split)
-                dst += context.offset[(A>>4) % NBANKS];
-            if (src < context.split)
-                src += context.offset[A % NBANKS];
+            if (dst < z->split)
+                dst += z->offset[(A>>4) % NBANKS];
+            if (src < z->split)
+                src += z->offset[A % NBANKS];
             // TODO careful, this won't work across the split!
             memcpy(dst, src, BC);
             DE += BC;
@@ -276,13 +319,19 @@ void setup () {
     }
     printf("- free mem %d\n", ESP.getFreeHeap());
 
-#if TTGOT8
-    disk_init(SD);
-    File fp = SD.open("/fuzix.bin", "r");
-#else
-    disk_init(SPIFFS);
-    File fp = SPIFFS.open("/fuzix.bin", "r");
-#endif
+    File root = MYFS.open("/rootfs.img", "r+");
+    if (!root) {
+        printf("- can't open root\n");
+        return;
+    }
+    rootDisk.init(&root);
+
+    File swap = MYFS.open("/swap.img", "r+");
+    if (!swap) {
+        printf("- can't open swap\n");
+        return;
+    }
+    swapDisk.init(&swap);
 
     const uint16_t origin = 0x0100;
 
@@ -295,11 +344,20 @@ void setup () {
     printf("  fuzix.bin @ 0x%08x, %u b\n", (int32_t) fuzix_start, size);
     memcpy(mainMem + origin, fuzix_start, size);
 
+    //spi_flash_mmap_dump();
+    const esp_partition_t* ep = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, (esp_partition_subtype_t) 0x01, 0
+    );
+    if (ep != 0) {
+        printf("- esp disk partition %08x\n", ep->address);
+        FlashMemory::init(ep->address);
+    }
+
     printf("- start z80emu\n");
 
+    static Context context; // just static so it starts out cleared
     Z80Reset(&context.state);
     context.state.pc = origin;
-    context.done = 0;
 
     do {
         Z80Emulate(&context.state, 2000000, &context);

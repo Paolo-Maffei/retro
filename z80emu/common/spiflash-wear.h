@@ -6,12 +6,12 @@
 // Currently assumes a 4 KB erase page size and one remap page per 256 pages.
 
 template< typename FLASH, int BYTESPERBLOCK >
-class FlashWear {
-    constexpr static bool DEBUG = false;
-    constexpr static uint32_t pageSize      = 4 * 1024; // TODO FLASH::pageSize
+class SpiFlashWear {
+    constexpr static bool DEBUG = true;
+    constexpr static uint32_t pageSize      = FLASH::pageSize;
     constexpr static uint32_t pagesPerGroup = 256; // TODO currently 1 MB
     constexpr static uint32_t groupSize     = pagesPerGroup * pageSize;
-    constexpr static uint32_t blockSize     = 1 << BYTESPERBLOCK;
+    constexpr static uint32_t blockSize     = BYTESPERBLOCK;
     constexpr static uint32_t groupBlocks   = groupSize / blockSize;
     constexpr static uint32_t pageBlocks    = pageSize / blockSize;
 
@@ -105,9 +105,7 @@ class FlashWear {
     }
 
 public:
-    void init () {
-        FLASH::init();
-    }
+    void init () {}
 
     void readBlock (int blknum, void* buf) {
         int blk = remapBlock(blknum);
