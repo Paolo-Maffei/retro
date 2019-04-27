@@ -25,8 +25,7 @@ constexpr int LED = BUILTIN_LED;
 Context context;
 uint8_t mainMem [1<<16];
 
-#define NCHUNKS 30  // 120K available, e.g. two banks of 60K
-
+#define NCHUNKS 45  // 180K available, e.g. three banks of 60K
 uint8_t* chunkMem [NCHUNKS]; // lots of memory on ESP32, but it's fragmented!
 
 File disk_fp;
@@ -45,7 +44,8 @@ void disk_read (File* fp, int pos, void* buf, int len) {
     fp->seek(pos * len);
     int e = fp->read((uint8_t*) buf, len);
     if (e != len)
-        printf("r %d? fp %x pos %d len %d buf %x = %d\n", e, fp, pos, len, buf);
+        printf("r %d? fp %08x pos %d len %d buf %08x\n",
+                e, (int32_t) fp, pos, len, (int32_t) buf);
 #if 0
     printf("\t\t\t      ");
     for (int i = 0; i < 16; ++i)
@@ -58,7 +58,8 @@ void disk_write (File* fp, int pos, void const* buf, int len) {
     fp->seek(pos * len);
     int e = fp->write((const uint8_t*) buf, len);
     if (e != len)
-        printf("W %d? fp %x pos %d len %d buf %x = %d\n", e, fp, pos, len, buf);
+        printf("W %d? fp %08x pos %d len %d buf %08x\n",
+                e, (int32_t) fp, pos, len, (int32_t) buf);
 }
 
 static void setBankSplit (uint8_t page) {
@@ -76,6 +77,11 @@ static void setBankSplit (uint8_t page) {
             if (++n >= NCHUNKS)
                 break;
         }
+
+    // number of fully populated banks, incl main mem
+    context.nbanks = NCHUNKS / cpb + 1;
+    if (context.nbanks > NBANKS)
+        context.nbanks = NBANKS;
 
 #if 0
     printf("setBank %02d=%04x, CHUNK_SIZE %d, NBANKS %d, NCHUNKS %d, cpb %d\n",
@@ -171,8 +177,9 @@ void systemCall (Context* z, int req, int pc) {
             }
 #endif
             break;
-        case 6: // set banked memory limit
+        case 6: // set banked memory limit, return number available
             setBankSplit(A);
+            A = context.nbanks;
             break;
         case 7: { // select bank and return previous setting
             uint8_t prevBank = context.bank;
@@ -222,29 +229,26 @@ void setup () {
     SPI.begin(14, 2, 15, 13);
 
     if(!SD.begin(13)){
-        Serial.println("Card Mount Failed");
+        printf("Card Mount Failed\n");
         return;
     }
     uint8_t cardType = SD.cardType();
 
     if(cardType == CARD_NONE){
-        Serial.println("No SD card attached");
+        printf("No SD card attached\n");
         return;
     }
 
-    Serial.print("SD Card Type: ");
-    if(cardType == CARD_MMC){
-        Serial.println("MMC");
-    } else if(cardType == CARD_SD){
-        Serial.println("SDSC");
-    } else if(cardType == CARD_SDHC){
-        Serial.println("SDHC");
-    } else {
-        Serial.println("UNKNOWN");
+    const char* s = "UNKNOWN";
+    switch (cardType) {
+        case CARD_MMC:  s = "MMC";  break;
+        case CARD_SD:   s = "SDSC"; break;
+        case CARD_SDHC: s = "SDHC"; break;
     }
+    printf("SD Card Type: %s\n", s);
 
-    uint64_t cardSize = SD.cardSize() / (1024 * 1024);
-    printf("SD Card Size: %lluMB\n", cardSize);
+    uint32_t cardSize = SD.cardSize() >> 20;
+    printf("SD Card Size: %lu MB\n", cardSize);
 
     listDir(SD, "/");
 #else
@@ -254,7 +258,7 @@ void setup () {
     listDir(SPIFFS, "/");
 #endif
 
-    // ESP32 heap memory is very fragmented, must allocate lots of small chunks
+    // ESP32 heap can be very fragmented, must allocate lots of small chunks
     //heap_caps_print_heap_info(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 
     //printf("- free %d max %d\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
@@ -284,8 +288,9 @@ void setup () {
     // in platformio.ini: build_flags = -DCOMPONENT_EMBED_TXTFILES=fuzix.bin
     extern const uint8_t fuzix_start[] asm("_binary_fuzix_bin_start");
     extern const uint8_t fuzix_end[]   asm("_binary_fuzix_bin_end");
-    printf("fuzix.bin at 0x%08x, %u b\n", fuzix_start, fuzix_end-fuzix_start);
-    memcpy(mainMem + origin, fuzix_start, fuzix_end - fuzix_start);
+    unsigned size = fuzix_end - fuzix_start;
+    printf("  fuzix.bin @ 0x%08x, %u b\n", (int32_t) fuzix_start, size);
+    memcpy(mainMem + origin, fuzix_start, size);
 
     printf("- start z80emu\n");
 
