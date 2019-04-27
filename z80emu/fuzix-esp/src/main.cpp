@@ -269,8 +269,6 @@ void setup () {
     }
     printf("- free mem %d\n", ESP.getFreeHeap());
 
-    const uint16_t origin = 0x0100;
-
 #if TTGOT8
     disk_init(SD);
     File fp = SD.open("/fuzix.bin", "r");
@@ -279,20 +277,17 @@ void setup () {
     File fp = SPIFFS.open("/fuzix.bin", "r");
 #endif
 
-    if (fp == 0)
-        printf("- can't open fuzix.bin\n");
-    for (uint16_t pos = origin; ; pos += 256) {
-        int e = fp.read(mapMem(&context, pos), 256);
-        if (e < 0)
-            printf("- error reading fuzix.bin\n");
-        if (e <= 0)
-            break;
-        printf(".");
-    }
-    fp.close();
-    printf("\n");
+    const uint16_t origin = 0x0100;
 
-    printf("- start z80emu %d\n");
+    // embeded the fuzix binary using a special platformio trick, see
+    // http://docs.platformio.org/en/latest/platforms/espressif32.html
+    // in platformio.ini: build_flags = -DCOMPONENT_EMBED_TXTFILES=fuzix.bin
+    extern const uint8_t fuzix_start[] asm("_binary_fuzix_bin_start");
+    extern const uint8_t fuzix_end[]   asm("_binary_fuzix_bin_end");
+    printf("fuzix.bin at 0x%08x, %u b\n", fuzix_start, fuzix_end-fuzix_start);
+    memcpy(mainMem + origin, fuzix_start, fuzix_end - fuzix_start);
+
+    printf("- start z80emu\n");
 
     Z80Reset(&context.state);
     context.state.pc = origin;
