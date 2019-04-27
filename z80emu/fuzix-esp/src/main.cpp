@@ -45,7 +45,7 @@ void disk_read (File* fp, int pos, void* buf, int len) {
     fp->seek(pos * len);
     int e = fp->read((uint8_t*) buf, len);
     if (e != len)
-        printf("r %d: fp %x pos %d len %d buf %x = %d\n", e, fp, pos, len, buf);
+        printf("r %d? fp %x pos %d len %d buf %x = %d\n", e, fp, pos, len, buf);
 #if 0
     printf("\t\t\t      ");
     for (int i = 0; i < 16; ++i)
@@ -58,32 +58,43 @@ void disk_write (File* fp, int pos, void const* buf, int len) {
     fp->seek(pos * len);
     int e = fp->write((const uint8_t*) buf, len);
     if (e != len)
-        printf("W %d: fp %x pos %d len %d buf %x = %d\n", e, fp, pos, len, buf);
+        printf("W %d? fp %x pos %d len %d buf %x = %d\n", e, fp, pos, len, buf);
 }
 
 static void setBankSplit (uint8_t page) {
     context.split = mainMem + (page << 8);
     memset(context.offset, 0, sizeof context.offset);
 
-    int cpb = ((page << 8) + (CHUNK_SIZE-1)) >> CHUNK_BITS; // chunks per bank
+    int cpb = ((page << 8) + CHUNK_SIZE - 1) / CHUNK_SIZE; // chunks per bank
+    // for each bank 1..up, assign as many chunks as needed for that bank
     for (int i = 1, n = 0; i < NBANKS && n < NCHUNKS; ++i)
         for (int j = 0; j < cpb; ++j) {
             // the offset adjusts the calculated address to point into the chunk
             // the first <cpb> entries remain zero, i.e. use unbanked mainMem
-            context.offset[cpb+n] = chunkMem[n] - mainMem - (j << CHUNK_BITS);
+            int pos = i * CHUNK_COUNT + j;
+            context.offset[pos] = chunkMem[n] - mainMem - j * CHUNK_SIZE;
             if (++n >= NCHUNKS)
                 break;
         }
 
 #if 0
-    printf("setBank: %02d = %04x\n", page, page << 8);
+    printf("setBank %02d=%04x, CHUNK_SIZE %d, NBANKS %d, NCHUNKS %d, cpb %d\n",
+            page, page << 8, CHUNK_SIZE, NBANKS, NCHUNKS, cpb);
+    printf("%d chunks:\n", NCHUNKS);
+    for (int i = 0; i < NCHUNKS; ++i)
+        printf("%4d: %08x\n", i, chunkMem[i]);
     printf("%d offsets:\n", CHUNK_TOTAL);
     for (int i = 0; i < CHUNK_TOTAL; ++i)
         printf("%4d: off %9d -> %x\n",
                 i, context.offset[i], mainMem + context.offset[i]);
-    printf("%d chunks:\n", NCHUNKS);
-    for (int i = 0; i < NCHUNKS; ++i)
-        printf("%4d: %08x\n", i, chunkMem[i]);
+    for (int b = 0; b < NBANKS; ++b) {
+        printf("bank %d test:", b);
+        context.bank = b;
+        for (int i = 0; i < 6; ++i)
+            printf(" %08x", mapMem(&context, 1024 * i));
+        printf("\n");
+    }
+    context.bank = 0;
 #endif
 }
 
@@ -244,6 +255,7 @@ void setup () {
 #endif
 
     // ESP32 heap memory is very fragmented, must allocate lots of small chunks
+    //heap_caps_print_heap_info(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 
     //printf("- free %d max %d\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
     for (int i = 0; i < NCHUNKS; ++i) {
