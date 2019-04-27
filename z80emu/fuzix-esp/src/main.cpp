@@ -1,5 +1,6 @@
 #include "SPIFFS.h"
 #include "SD.h"
+#include "spiflash-wear.h"
 
 #define printf Serial.printf
 
@@ -22,6 +23,8 @@ constexpr int LED = 21; // reusing wrover board def
 constexpr int LED = BUILTIN_LED;
 #endif
 
+#define BLKSZ 512
+
 Context context;
 uint8_t mainMem [1<<16];
 
@@ -40,12 +43,12 @@ void disk_init (fs::FS &fs) {
         printf("- can't open swap\n");
 }
 
-void disk_read (File* fp, int pos, void* buf, int len) {
-    fp->seek(pos * len);
-    int e = fp->read((uint8_t*) buf, len);
-    if (e != len)
-        printf("r %d? fp %08x pos %d len %d buf %08x\n",
-                e, (int32_t) fp, pos, len, (int32_t) buf);
+void disk_readBlock (File* fp, int pos, void* buf) {
+    fp->seek(pos * BLKSZ);
+    int e = fp->read((uint8_t*) buf, BLKSZ);
+    if (e != BLKSZ)
+        printf("r %d? fp %08x pos %d buf %08x\n",
+                e, (int32_t) fp, pos, (int32_t) buf);
 #if 0
     printf("\t\t\t      ");
     for (int i = 0; i < 16; ++i)
@@ -54,12 +57,12 @@ void disk_read (File* fp, int pos, void* buf, int len) {
 #endif
 }
 
-void disk_write (File* fp, int pos, void const* buf, int len) {
-    fp->seek(pos * len);
-    int e = fp->write((const uint8_t*) buf, len);
-    if (e != len)
-        printf("W %d? fp %08x pos %d len %d buf %08x\n",
-                e, (int32_t) fp, pos, len, (int32_t) buf);
+void disk_writeBlock (File* fp, int pos, void const* buf) {
+    fp->seek(pos * BLKSZ);
+    int e = fp->write((const uint8_t*) buf, BLKSZ);
+    if (e != BLKSZ)
+        printf("W %d? fp %08x pos %d buf %08x\n",
+                e, (int32_t) fp, pos, (int32_t) buf);
 }
 
 static void setBankSplit (uint8_t page) {
@@ -141,21 +144,21 @@ void systemCall (Context* z, int req, int pc) {
                 File* fp = A == 0 ? &disk_fp : &swap_fp;
 
                 // use intermediate buffer in case I/O spans different chunks
-                uint8_t buf [512];
+                uint8_t buf [BLKSZ];
                 for (int i = 0; i < cnt; ++i) {
 #if 0
-                    //void* mem = mapMem(&context, HL + 512*i);
+                    //void* mem = mapMem(&context, HL + BLKSZ*i);
                     printf("HD%d wr %d mem %d:0x%x pos %d\n",
-                            A, out, context.bank, HL + 512*i, pos + i);
+                            A, out, context.bank, HL + BLKSZ*i, pos + i);
 #endif
                     if (out) {
                         for (int j = 0; j < sizeof buf; ++j)
-                            buf[j] = *mapMem(&context, HL + 512*i + j);
-                        disk_write(fp, pos + i, buf, 512);
+                            buf[j] = *mapMem(&context, HL + BLKSZ*i + j);
+                        disk_writeBlock(fp, pos + i, buf);
                     } else {
-                        disk_read(fp, pos + i, buf, 512);
+                        disk_readBlock(fp, pos + i, buf);
                         for (int j = 0; j < sizeof buf; ++j)
-                            *mapMem(&context, HL + 512*i + j) = buf[j];
+                            *mapMem(&context, HL + BLKSZ*i + j) = buf[j];
                     }
                 }
             }
