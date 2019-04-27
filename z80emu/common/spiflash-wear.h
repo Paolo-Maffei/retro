@@ -7,7 +7,7 @@
 
 template< typename FLASH, int BYTESPERBLOCK >
 class SpiFlashWear {
-    constexpr static bool DEBUG = true;
+    constexpr static bool DEBUG = false;
     constexpr static uint32_t pageSize      = FLASH::pageSize;
     constexpr static uint32_t pagesPerGroup = 256; // TODO currently 1 MB
     constexpr static uint32_t groupSize     = pagesPerGroup * pageSize;
@@ -99,22 +99,25 @@ class SpiFlashWear {
         FLASH::write(blockSize * blk, buf, blockSize);
     }
 
-    int remapBlock (int blknum) {
+    int renumberBlock (int blknum) {
         // renumber block accesses so they never refer to the remap pages
-        return (blknum / (groupBlocks-pageBlocks)) * groupBlocks;
+        int n = blknum + blknum / (groupBlocks-pageBlocks);
+        if (DEBUG)
+            printf("renumberBlock %d -> %d\n", blknum, n);
+        return n;
     }
 
 public:
     void init () {}
 
     void readBlock (int blknum, void* buf) {
-        int blk = remapBlock(blknum);
+        int blk = renumberBlock(blknum);
         loadMap(blk);
         readUnmapped(remap(blk), buf);
     }
 
     void writeBlock (int blknum, const void* buf) {
-        int blk = remapBlock(blknum);
+        int blk = renumberBlock(blknum);
         loadMap(blk);
         int slot = findFreeSlot();
         if (slot == 0) {
