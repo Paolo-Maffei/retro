@@ -67,37 +67,37 @@ struct MappedDisk {
     }
 } rootDisk, swapDisk;
 
-struct FlashMemory {
+struct EspFlash {
     constexpr static uint32_t pageSize = 4096;
 
-    static uint32_t base;
+    static const esp_partition_t* base;
 
-    static void init (uint32_t off) {
-        base = off;
+    static void init (const esp_partition_t* ep) {
+        base = ep;
     }
 
     static void read (int pos, void* buf, int len) {
-        int e = base == 0 ? -1 : spi_flash_read(base + pos, buf, len);
+        int e = base == 0 ? -1 : esp_partition_read(base, pos, buf, len);
         if (e != 0)
             printf("flash write %d?\n", e);
     }
 
     static void write (int pos, void const* buf, int len) {
-        int e = base == 0 ? -1 : spi_flash_write(base + pos, buf, len);
+        int e = base == 0 ? -1 : esp_partition_write(base, pos, buf, len);
         if (e != 0)
             printf("flash write %d?\n", e);
     }
 
     static void erase (int pos) {
-        int e = base == 0 ? -1 : spi_flash_erase_range(base + pos, pageSize);
+        int e = base == 0 ? -1 : esp_partition_erase_range(base, pos, pageSize);
         if (e != 0)
-            printf("flash write %d?\n", e);
+            printf("flash erase %d?\n", e);
     }
 };
 
-uint32_t FlashMemory::base = 0;
+const esp_partition_t* EspFlash::base = 0;
 
-SpiFlashWear<FlashMemory,512> swapInFlash;
+SpiFlashWear<EspFlash,512> swapInFlash;
 
 static void setBankSplit (Context* z, uint8_t page) {
     z->split = mainMem + (page << 8);
@@ -189,14 +189,14 @@ void systemCall (Context* z, int req, int pc) {
                             buf[j] = *mapMem(z, HL + BLKSZ*i + j);
                         if (A == 0)
                             rootDisk.writeBlock(pos + i, buf);
-                        else if (FlashMemory::base == 0)
+                        else if (EspFlash::base == 0)
                             swapDisk.writeBlock(pos + i, buf);
                         else
                             swapInFlash.writeBlock(pos + i, buf);
                     } else {
                         if (A == 0)
                             rootDisk.readBlock(pos + i, buf);
-                        else if (FlashMemory::base == 0)
+                        else if (EspFlash::base == 0)
                             swapDisk.readBlock(pos + i, buf);
                         else
                             swapInFlash.readBlock(pos + i, buf);
@@ -350,7 +350,7 @@ void setup () {
     );
     if (ep != 0) {
         printf("- esp disk partition %08x\n", ep->address);
-        FlashMemory::init(ep->address);
+        EspFlash::init(ep);
     }
 
     printf("- start z80emu\n");

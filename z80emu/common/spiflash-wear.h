@@ -86,7 +86,7 @@ class SpiFlashWear {
 
         if (DEBUG) printf("flush done, clear map %d\n", mapBase);
         memset(map, 0xFF, sizeof map);
-        FLASH::erase(mapBase>>1);
+        FLASH::erase(blockSize * mapBase);
     }
 
     void readUnmapped (int blk, void* buf) {
@@ -94,8 +94,8 @@ class SpiFlashWear {
     }
 
     void writeUnmapped (int blk, const void* buf) {
-        if (blk % (pageSize/blockSize) == 0)
-            FLASH::erase(blk>>1);
+        if (blk % pageBlocks == 0)
+            FLASH::erase(blockSize * blk);
         FLASH::write(blockSize * blk, buf, blockSize);
     }
 
