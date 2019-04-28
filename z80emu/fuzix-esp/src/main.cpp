@@ -65,7 +65,7 @@ struct MappedDisk {
             printf("W %d? fp %08x pos %d buf %08x\n",
                     e, (int32_t) fp, pos, (int32_t) buf);
     }
-} rootDisk, swapDisk;
+} mappedRoot, mappedSwap;
 
 struct EspFlash {
     constexpr static uint32_t pageSize = 4096;
@@ -97,7 +97,7 @@ struct EspFlash {
 
 const esp_partition_t* EspFlash::base = 0;
 
-SpiFlashWear<EspFlash,512> swapInFlash;
+SpiFlashWear<EspFlash,512> flassDisk;
 
 static void setBankSplit (Context* z, uint8_t page) {
     z->split = mainMem + (page << 8);
@@ -141,6 +141,40 @@ static void setBankSplit (Context* z, uint8_t page) {
 #endif
 }
 
+void diskReq (Context* z, bool out, uint8_t disk, uint16_t pos, uint16_t addr) {
+#if 0
+    //void* mem = mapMem(z, addr);
+    printf("HD%d wr %d mem %d:0x%x pos %d\n",
+            disk, out, z->bank, addr, pos);
+#endif
+    bool hasFlashDisk = EspFlash::base != 0;
+
+    // use intermediate buffer in case I/O spans different chunks
+    uint8_t buf [BLKSZ];
+
+    if (out) {
+        for (int j = 0; j < sizeof buf; ++j)
+            buf[j] = *mapMem(z, addr + j);
+
+        if (disk == 0)
+            mappedRoot.writeBlock(pos, buf);
+        else if (hasFlashDisk)
+            flassDisk.writeBlock(pos, buf);
+        else
+            mappedSwap.writeBlock(pos, buf);
+    } else {
+        if (disk == 0)
+            mappedRoot.readBlock(pos, buf);
+        else if (hasFlashDisk)
+            flassDisk.readBlock(pos, buf);
+        else
+            mappedSwap.readBlock(pos, buf);
+
+        for (int j = 0; j < sizeof buf; ++j)
+            *mapMem(z, addr + j) = buf[j];
+    }
+}
+
 void systemCall (Context* z, int req, int pc) {
     Z80_STATE* state = &(z->state);
 #if 0
@@ -163,50 +197,19 @@ void systemCall (Context* z, int req, int pc) {
             for (uint16_t i = DE; *mapMem(z, i) != 0; i++)
                 Serial.write(*mapMem(z, i));
             break;
-        case 4: // read/write
+        case 4: { // read/write
             //  ld a,(sekdrv)
             //  ld b,1 ; +128 for write
             //  ld de,(seksat)
             //  ld hl,(dmaadr)
             //  in a,(4)
-            //  ret
-            //printf("AF %04X BC %04X DE %04X HL %04X\n", AF, BC, DE, HL);
-            {
-                bool out = (B & 0x80) != 0;
-                uint8_t cnt = B & 0x7F;
-                uint16_t pos = DE;  // no skewing
-
-                // use intermediate buffer in case I/O spans different chunks
-                uint8_t buf [BLKSZ];
-                for (int i = 0; i < cnt; ++i) {
-#if 0
-                    //void* mem = mapMem(z, HL + BLKSZ*i);
-                    printf("HD%d wr %d mem %d:0x%x pos %d\n",
-                            A, out, z->bank, HL + BLKSZ*i, pos + i);
-#endif
-                    if (out) {
-                        for (int j = 0; j < sizeof buf; ++j)
-                            buf[j] = *mapMem(z, HL + BLKSZ*i + j);
-                        if (A == 0)
-                            rootDisk.writeBlock(pos + i, buf);
-                        else if (EspFlash::base == 0)
-                            swapDisk.writeBlock(pos + i, buf);
-                        else
-                            swapInFlash.writeBlock(pos + i, buf);
-                    } else {
-                        if (A == 0)
-                            rootDisk.readBlock(pos + i, buf);
-                        else if (EspFlash::base == 0)
-                            swapDisk.readBlock(pos + i, buf);
-                        else
-                            swapInFlash.readBlock(pos + i, buf);
-                        for (int j = 0; j < sizeof buf; ++j)
-                            *mapMem(z, HL + BLKSZ*i + j) = buf[j];
-                    }
-                }
-            }
+            bool out = (B & 0x80) != 0;
+            uint8_t cnt = B & 0x7F;
+            for (int i = 0; i < cnt; ++i)
+                diskReq(z, out, A, DE + i, HL + BLKSZ * i);
             A = 0;
             break;
+        }
         case 5: // time get/set
 #if 0
             if (C == 0) {
@@ -324,14 +327,14 @@ void setup () {
         printf("- can't open root\n");
         return;
     }
-    rootDisk.init(&root);
+    mappedRoot.init(&root);
 
     File swap = MYFS.open("/swap.img", "r+");
     if (!swap) {
         printf("- can't open swap\n");
         return;
     }
-    swapDisk.init(&swap);
+    mappedSwap.init(&swap);
 
     const uint16_t origin = 0x0100;
 
@@ -360,7 +363,7 @@ void setup () {
     context.state.pc = origin;
 
     do {
-        Z80Emulate(&context.state, 2000000, &context);
+        Z80Emulate(&context.state, 5000000, &context);
         digitalWrite(LED, !digitalRead(LED));
     } while (!context.done);
 
