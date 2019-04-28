@@ -277,7 +277,7 @@ void setup () {
 #if TTGOT8
     SPI.begin(14, 2, 15, 13);
 
-    if(!SD.begin(13)){
+    if(!SD.begin(13, SPI, 120000000)){
         printf("Card Mount Failed\n");
         return;
     }
