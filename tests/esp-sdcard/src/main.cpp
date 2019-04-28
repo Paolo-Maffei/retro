@@ -1,8 +1,10 @@
 #include <SD.h>
 #include <SD_MMC.h>
 
+#define printf Serial.printf
+
 void listDir(fs::FS &fs, const char * dirname, uint8_t levels){
-    Serial.printf("Listing directory: %s\n", dirname);
+    printf("Listing directory: %s\n", dirname);
 
     File root = fs.open(dirname);
     if(!root){
@@ -33,7 +35,7 @@ void listDir(fs::FS &fs, const char * dirname, uint8_t levels){
 }
 
 void createDir(fs::FS &fs, const char * path){
-    Serial.printf("Creating Dir: %s\n", path);
+    printf("Creating Dir: %s\n", path);
     if(fs.mkdir(path)){
         Serial.println("Dir created");
     } else {
@@ -42,7 +44,7 @@ void createDir(fs::FS &fs, const char * path){
 }
 
 void removeDir(fs::FS &fs, const char * path){
-    Serial.printf("Removing Dir: %s\n", path);
+    printf("Removing Dir: %s\n", path);
     if(fs.rmdir(path)){
         Serial.println("Dir removed");
     } else {
@@ -51,7 +53,7 @@ void removeDir(fs::FS &fs, const char * path){
 }
 
 void readFile(fs::FS &fs, const char * path){
-    Serial.printf("Reading file: %s\n", path);
+    printf("Reading file: %s\n", path);
 
     File file = fs.open(path);
     if(!file){
@@ -67,7 +69,7 @@ void readFile(fs::FS &fs, const char * path){
 }
 
 void writeFile(fs::FS &fs, const char * path, const char * message){
-    Serial.printf("Writing file: %s\n", path);
+    printf("Writing file: %s\n", path);
 
     File file = fs.open(path, FILE_WRITE);
     if(!file){
@@ -83,7 +85,7 @@ void writeFile(fs::FS &fs, const char * path, const char * message){
 }
 
 void appendFile(fs::FS &fs, const char * path, const char * message){
-    Serial.printf("Appending to file: %s\n", path);
+    printf("Appending to file: %s\n", path);
 
     File file = fs.open(path, FILE_APPEND);
     if(!file){
@@ -99,7 +101,7 @@ void appendFile(fs::FS &fs, const char * path, const char * message){
 }
 
 void renameFile(fs::FS &fs, const char * path1, const char * path2){
-    Serial.printf("Renaming file %s to %s\n", path1, path2);
+    printf("Renaming file %s to %s\n", path1, path2);
     if (fs.rename(path1, path2)) {
         Serial.println("File renamed");
     } else {
@@ -108,7 +110,7 @@ void renameFile(fs::FS &fs, const char * path1, const char * path2){
 }
 
 void deleteFile(fs::FS &fs, const char * path){
-    Serial.printf("Deleting file: %s\n", path);
+    printf("Deleting file: %s\n", path);
     if(fs.remove(path)){
         Serial.println("File deleted");
     } else {
@@ -135,7 +137,7 @@ void testFileIO(fs::FS &fs, const char * path){
             len -= toRead;
         }
         end = millis() - start;
-        Serial.printf("%u bytes read for %u ms\n", flen, end);
+        printf("%u bytes read for %u ms\n", flen, end);
         file.close();
     } else {
         Serial.println("Failed to open file for reading");
@@ -154,77 +156,9 @@ void testFileIO(fs::FS &fs, const char * path){
         file.write(buf, 512);
     }
     end = millis() - start;
-    Serial.printf("%u bytes written for %u ms\n", 2048 * 512, end);
+    printf("%u bytes written for %u ms\n", 2048 * 512, end);
     file.close();
 }
-
-#if 0
-void setup(void) {
-    Serial.begin(115200);
-
-    Serial.print("Initializing SD card...");
-
-#if 1
-gpio_set_pull_mode(GPIO_NUM_15, GPIO_PULLUP_ONLY); // CMD, 4- and 1- line modes
-gpio_set_pull_mode(GPIO_NUM_2, GPIO_PULLUP_ONLY);  // D0, 4- and 1-line modes
-gpio_set_pull_mode(GPIO_NUM_4, GPIO_PULLUP_ONLY);  // D1, 4-line mode only
-gpio_set_pull_mode(GPIO_NUM_12, GPIO_PULLUP_ONLY); // D2, 4-line mode only
-gpio_set_pull_mode(GPIO_NUM_13, GPIO_PULLUP_ONLY); // D3, 4- and 1-line modes
-#endif
-    
-#if 1
-    if (!SD_MMC.begin("/sdcard", true)) {
-        Serial.println("failed!");
-        return;
-    }
-#else
-    SPI.begin(14, 2, 15, 13);
-    if(!SD.begin(13)){
-        Serial.println("Card Mount Failed");
-        return;
-    }
-    //uint64_t cardSize = SD.cardSize() / (1024 * 1024);
-#endif
-    Serial.println("OK!");
-
-    uint8_t cardType = SD.cardType();
-
-    if(cardType == CARD_NONE){
-        Serial.println("No SD card attached");
-        //return;
-    }
-
-    Serial.print("SD Card Type: ");
-    if(cardType == CARD_MMC){
-        Serial.println("MMC");
-    } else if(cardType == CARD_SD){
-        Serial.println("SDSC");
-    } else if(cardType == CARD_SDHC){
-        Serial.println("SDHC");
-    } else {
-        Serial.println("UNKNOWN");
-    }
-
-    uint64_t cardSize = SD.cardSize() / (1024 * 1024);
-    Serial.printf("SD Card Size: %lluMB\n", cardSize);
-
-    listDir(SD, "/", 0);
-    createDir(SD, "/mydir");
-    listDir(SD, "/", 0);
-    removeDir(SD, "/mydir");
-    listDir(SD, "/", 2);
-    writeFile(SD, "/hello.txt", "Hello ");
-    appendFile(SD, "/hello.txt", "World!\n");
-    readFile(SD, "/hello.txt");
-    deleteFile(SD, "/foo.txt");
-    renameFile(SD, "/hello.txt", "/foo.txt");
-    readFile(SD, "/foo.txt");
-    testFileIO(SD, "/test.txt");
-    Serial.printf("Total space: %lluMB\n", SD.totalBytes() / (1024 * 1024));
-    Serial.printf("Used space: %lluMB\n", SD.usedBytes() / (1024 * 1024));
-}
-
-#else
 
 /*
  * Connect the SD card to the following pins:
@@ -241,14 +175,33 @@ gpio_set_pull_mode(GPIO_NUM_13, GPIO_PULLUP_ONLY); // D3, 4- and 1-line modes
  *    D1       -
  */
 
-void setup () {
+void setup(void) {
     Serial.begin(115200);
-    SPI.begin(14, 2, 15, 13);
+    Serial.print("Opening SD card...");
 
-    if(!SD.begin(13)){
+#if 0
+gpio_set_pull_mode(GPIO_NUM_15, GPIO_PULLUP_ONLY); // CMD, 4- and 1- line modes
+gpio_set_pull_mode(GPIO_NUM_2, GPIO_PULLUP_ONLY);  // D0, 4- and 1-line modes
+gpio_set_pull_mode(GPIO_NUM_4, GPIO_PULLUP_ONLY);  // D1, 4-line mode only
+gpio_set_pull_mode(GPIO_NUM_12, GPIO_PULLUP_ONLY); // D2, 4-line mode only
+gpio_set_pull_mode(GPIO_NUM_13, GPIO_PULLUP_ONLY); // D3, 4- and 1-line modes
+#endif
+    
+#if 0
+    if (!SD_MMC.begin("/sdcard", true)) {
+        Serial.println("failed!");
+        return;
+    }
+#else
+    SPI.begin(14, 2, 15, 13);
+    if(!SD.begin(13, SPI, 12000000)){ // looks like µSD still works @ 120 MHz
         Serial.println("Card Mount Failed");
         return;
     }
+#endif
+
+    Serial.println("OK!");
+
     uint8_t cardType = SD.cardType();
 
     if(cardType == CARD_NONE){
@@ -268,7 +221,7 @@ void setup () {
     }
 
     uint64_t cardSize = SD.cardSize() / (1024 * 1024);
-    Serial.printf("SD Card Size: %lluMB\n", cardSize);
+    printf("SD Card Size: %lluMB\n", cardSize);
 
     listDir(SD, "/", 0);
     createDir(SD, "/mydir");
@@ -282,10 +235,8 @@ void setup () {
     renameFile(SD, "/hello.txt", "/foo.txt");
     readFile(SD, "/foo.txt");
     testFileIO(SD, "/test.txt");
-    Serial.printf("Total space: %lluMB\n", SD.totalBytes() / (1024 * 1024));
-    Serial.printf("Used space: %lluMB\n", SD.usedBytes() / (1024 * 1024));
+    printf("Total space: %lluMB\n", SD.totalBytes() / (1024 * 1024));
+    printf("Used space: %lluMB\n", SD.usedBytes() / (1024 * 1024));
 }
-
-#endif
 
 void loop () {}
