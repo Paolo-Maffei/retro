@@ -322,14 +322,14 @@ void setup () {
     }
     printf("- free mem %d\n", ESP.getFreeHeap());
 
-    File root = MYFS.open("/rootfs.img", "r+");
+    File root = MYFS.open("/root.img", "r+");
     if (!root) {
         printf("- can't open root\n");
         return;
     }
     mappedRoot.init(&root);
 
-    File swap = MYFS.open("/swap.img", "r+");
+    File swap = MYFS.open("/swap.img", "w+");
     if (!swap) {
         printf("- can't open swap\n");
         return;
