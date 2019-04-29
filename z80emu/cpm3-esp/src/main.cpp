@@ -14,9 +14,7 @@ extern "C" {
 #include "macros.h"
 }
 
-const uint8_t ram [] = {
-#include "hexsave.h"
-};
+constexpr int BLKSZ = 128;
 
 #if LOLIN32
 constexpr int LED = 22; // not 5!
@@ -30,7 +28,15 @@ constexpr int LED = -1; // doesn't appear to have an LED
 constexpr int LED = LED_BUILTIN;
 #endif
 
-#define BLKSZ 128
+const uint8_t ram [] = {
+#include "hexsave.h"
+};
+
+// embeded the system binary using a special platformio trick, see
+// http://docs.platformio.org/en/latest/platforms/espressif32.html
+// in config file: build_flags = -DCOMPONENT_EMBED_TXTFILES=system.bin
+extern const uint8_t system_start[] asm("_binary_system_bin_start");
+extern const uint8_t system_end[]   asm("_binary_system_bin_end");
 
 bool hasSdCard, hasSpiffs, hasRawFlash, hasPsRam;
 
@@ -336,13 +342,41 @@ bool initSpiffs () {
 
 File openSdOrSpiffs (const char* name, const char* mode) {
     File fd;
-    if (hasSdCard)
+    if (hasSdCard) {
         fd = SD.open(name, mode);
-    if (!fd && hasSpiffs)
+        if (fd.size() > 0)
+            printf("- SD: %s (%d b)\n", name, fd.size());
+    }
+    if (!fd && hasSpiffs) {
         fd = SPIFFS.open(name, mode);
-    if (!fd)
-        printf("Can't open %s\n", name);
+        if (fd.size() > 0)
+            printf("- SPIFFS: %s (%d b)\n", name, fd.size());
+    }
     return fd;
+}
+
+bool createSystemDisk (File& fp, const char* name) {
+    fp = openSdOrSpiffs(name, "w+");
+    if (!fp)
+        return false;
+
+    unsigned size = system_end - system_start;
+
+    fp.seek(0);
+    if (fp.write(system_start, size) != size)
+        return false;
+
+    uint8_t buf [128];
+    memset(buf, 0xE5, sizeof buf);
+
+    fp.seek(2 * 26 * 128);
+    for (int i = 0; i < 26; ++i)
+        if (fp.write(buf, sizeof buf) != sizeof buf)
+            return false;
+
+    printf("- system.bin @ 0x%08x, %u b\n", (int32_t) system_start, size);
+    fp.seek(0);
+    return true;
 }
 
 void allocateChunks () {
@@ -389,18 +423,23 @@ void setup () {
     hasSpiffs = initSpiffs();
 
     File boot = openSdOrSpiffs("/fd0.img", "r+");
-    if (!boot)
-        return;
+    if (boot.size() == 0) {
+        printf("No boot disk, creating ...\n");
+        if (!createSystemDisk(boot, "/fd0.img")) {
+            printf("Cannot create boot disk\n");
+            return;
+        }
+    }
     mappedBoot.init(&boot);
 
     File root = openSdOrSpiffs("/fd1.img", "r+");
     if (!root)
-        return;
+        printf("Can't open root disk\n");
     mappedRoot.init(&root);
 
     File swap = openSdOrSpiffs("/fd2.img", "w+");
     if (!swap)
-        return;
+        printf("Can't open swap disk\n");
     mappedSwap.init(&swap);
 
     printf("- start z80emu\n");
@@ -408,25 +447,11 @@ void setup () {
     static Context context; // just static so it starts out cleared
     Z80Reset(&context.state);
 
-#if 1
     // emulated room bootstrap, loads first disk sector to 0x0000
     mappedBoot.readBlock(0, mainMem);
 
     // leave a copy of HEXSAVE.COM at 0x0100
     memcpy(mainMem + 0x0100, ram, sizeof ram);
-#else
-    // embeded the fuzix binary using a special platformio trick, see
-    // http://docs.platformio.org/en/latest/platforms/espressif32.html
-    // in platformio.ini: build_flags = -DCOMPONENT_EMBED_TXTFILES=fuzix.bin
-    extern const uint8_t fuzix_start[] asm("_binary_fuzix_bin_start");
-    extern const uint8_t fuzix_end[]   asm("_binary_fuzix_bin_end");
-    unsigned size = fuzix_end - fuzix_start;
-    printf("  fuzix.bin @ 0x%08x, %u b\n", (int32_t) fuzix_start, size);
-    
-    const uint16_t origin = 0x0100;
-    memcpy(mainMem + origin, fuzix_start, size);
-    context.state.pc = origin;
-#endif
 
     do {
         Z80Emulate(&context.state, 5000000, &context);
