@@ -289,7 +289,8 @@ bool initRawFlash () {
         ESP_PARTITION_TYPE_DATA, (esp_partition_subtype_t) 0x01, 0
     );
     if (ep != 0) {
-        printf("- esp disk partition %08x\n", ep->address);
+        printf("- %u KB raw flash partition at 0x%08x\n",
+                ep->size >> 10, ep->address);
         EspFlash::init(ep);
         return true;
     }
@@ -321,7 +322,7 @@ bool initSdCard () {
 }
 
 bool initSpiffs () {
-    if (SPIFFS.begin(true) != 0) {
+    if (SPIFFS.begin() != 0) {
         uint32_t size = SPIFFS.totalBytes() >> 10;
         uint32_t free = (SPIFFS.totalBytes() - SPIFFS.usedBytes()) >> 10;
         printf("- SPIFFS size %u KB, free %u KB:\n", size, free);
@@ -329,6 +330,7 @@ bool initSpiffs () {
         return true;
     }
     printf("No SPIFFS partition found\n");
+    SPIFFS.format();
     return false;
 }
 
