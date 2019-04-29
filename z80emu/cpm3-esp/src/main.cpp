@@ -14,8 +14,8 @@ extern "C" {
 #include "macros.h"
 }
 
-const uint8_t rom [] = {
-#include "rom-cpm.h"
+const uint8_t ram [] = {
+#include "hexsave.h"
 };
 
 #if LOLIN32
@@ -32,12 +32,12 @@ constexpr int LED = LED_BUILTIN;
 
 #define BLKSZ 512
 
-bool hasSdCard, hasSpiffs, hasFlashDisk, hasPsRam;
+bool hasSdCard, hasSpiffs, hasRawFlash, hasPsRam;
 
 uint8_t mainMem [1<<16];
 
 #define NCHUNKS 32  // 128K available, e.g. at least two banks of any size
-uint8_t* chunkMem [NCHUNKS]; // lots of memory on ESP32, but it's fragmented!
+uint8_t* chunkMem [CHUNK_TOTAL]; // lots of memory on ESP32, but fragmented!
 
 struct MappedDisk {
     File* fp;
@@ -67,7 +67,7 @@ struct MappedDisk {
             printf("W %d? fp %08x pos %d buf %08x\n",
                     e, (int32_t) fp, pos, (int32_t) buf);
     }
-} mappedRoot, mappedSwap;
+} mappedBoot, mappedRoot, mappedSwap;
 
 struct EspFlash {
     constexpr static uint32_t pageSize = 4096;
@@ -99,7 +99,7 @@ struct EspFlash {
 
 const esp_partition_t* EspFlash::base = 0;
 
-SpiFlashWear<EspFlash,512> flassDisk;
+SpiFlashWear<EspFlash,BLKSZ> flassDisk;
 
 static void setBankSplit (Context* z, uint8_t page) {
     z->split = mainMem + (page << 8);
@@ -119,7 +119,7 @@ static void setBankSplit (Context* z, uint8_t page) {
 
     // number of fully populated banks, incl main mem
     z->nbanks = NCHUNKS / cpb + 1;
-    if (z->nbanks > NBANKS)
+    if (hasPsRam || z->nbanks > NBANKS)
         z->nbanks = NBANKS;
 
 #if 0
@@ -158,14 +158,14 @@ void diskReq (Context* z, bool out, uint8_t disk, uint16_t pos, uint16_t addr) {
 
         if (disk == 0)
             mappedRoot.writeBlock(pos, buf);
-        else if (hasFlashDisk)
+        else if (hasRawFlash)
             flassDisk.writeBlock(pos, buf);
         else
             mappedSwap.writeBlock(pos, buf);
     } else {
         if (disk == 0)
             mappedRoot.readBlock(pos, buf);
-        else if (hasFlashDisk)
+        else if (hasRawFlash)
             flassDisk.readBlock(pos, buf);
         else
             mappedSwap.readBlock(pos, buf);
@@ -272,6 +272,61 @@ void listDir (fs::FS &fs, const char * dirname) {
     //root.close();
 }
 
+bool initPsRam () {
+    if (ESP.getPsramSize() > 1000000)
+        return true;
+    printf("- no PSRAM available\n");
+    return false;
+}
+
+bool initRawFlash () {
+    const esp_partition_t* ep = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, (esp_partition_subtype_t) 0x01, 0
+    );
+    if (ep != 0) {
+        printf("- esp disk partition %08x\n", ep->address);
+        EspFlash::init(ep);
+        return true;
+    }
+    return false;
+}
+
+bool initSdCard () {
+    SPI.begin(14, 2, 15, 13);
+    if (SD.begin(13, SPI, 120000000) != 0) {
+        uint8_t cardType = SD.cardType();
+        if (cardType == CARD_NONE) {
+            printf("No SD card inserted\n");
+            return false;
+        }
+        const char* type = "UNKNOWN";
+        switch (cardType) {
+            case CARD_MMC:  type = "MMC";  break;
+            case CARD_SD:   type = "SDSC"; break;
+            case CARD_SDHC: type = "SDHC"; break;
+        }
+        uint32_t size = SD.cardSize() >> 20;
+        uint32_t free = (SD.totalBytes() - SD.usedBytes()) >> 20;
+        printf("- %s card, size %u MB, free %u MB:\n", type, size, free);
+        listDir(SD, "/");
+        return true;
+    }
+    printf("SD card mount failed\n");
+    return false;
+}
+
+bool initSpiffs () {
+    if (SPIFFS.begin(true) != 0) {
+        uint32_t size = SPIFFS.totalBytes() >> 10;
+        uint32_t free = (SPIFFS.totalBytes() - SPIFFS.usedBytes()) >> 10;
+        printf("- SPIFFS size %u KB, free %u KB:\n", size, free);
+        listDir(SPIFFS, "/");
+        return true;
+    }
+    printf("No SPIFFS partition found\n");
+    return false;
+}
+
 File openSdOrSpiffs (const char* name, const char* mode) {
     File fd;
     if (hasSdCard)
@@ -283,92 +338,75 @@ File openSdOrSpiffs (const char* name, const char* mode) {
     return fd;
 }
 
+void allocateChunks () {
+    // ESP32 heap can be very fragmented, must allocate lots of small chunks
+
+    //heap_caps_print_heap_info(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    //printf("- free %d max %d\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+    for (int i = 0; i < NCHUNKS; ++i) {
+        chunkMem[i] = (uint8_t*) malloc(CHUNK_SIZE);
+        if (chunkMem[i] == 0) {
+            printf("- can't allocate RAM chunk %d\n", i);
+            return;
+        }
+    }
+    printf("- RAM heap size %u KB, free %u KB\n",
+            ESP.getHeapSize() >> 10, ESP.getFreeHeap() >> 10);
+
+    // with PSRAM, we can allocate additional chunks for the rest of the banks
+    // TODO there's no need to use small chunks for this as well
+    if (!hasPsRam)
+        return;
+
+    for (int i = NCHUNKS; i < CHUNK_TOTAL; ++i) {
+        chunkMem[i] = (uint8_t*) ps_malloc(CHUNK_SIZE);
+        if (chunkMem[i] == 0) {
+            printf("- can't allocate PSRAM chunk %d\n", i);
+            return;
+        }
+    }
+    printf("- PSRAM size %u KB, available %u KB\n",
+            ESP.getPsramSize() >> 10, ESP.getFreePsram() >> 10);
+}
+
 void setup () {
     Serial.begin(115200);
     printf("\n");
     pinMode(LED, OUTPUT);
 
-    hasPsRam = ESP.getPsramSize() > 1000000;
-    if (!hasPsRam)
-        printf("- no PSRAM available\n");
-    else
-        printf("- PSRAM size %u KB, available %u KB\n",
-                ESP.getPsramSize() >> 10, ESP.getFreePsram() >> 10);
+    hasPsRam = initPsRam();
+    allocateChunks(); // allocate before SD and SPIFFS are initialised
 
-    // ESP32 heap can be very fragmented, must allocate lots of small chunks
-    //heap_caps_print_heap_info(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    hasRawFlash = initRawFlash ();
+    hasSdCard = initSdCard();
+    hasSpiffs = initSpiffs();
 
-    //printf("- free %d max %d\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
-    for (int i = 0; i < NCHUNKS; ++i) {
-#if TTGOT8
-        chunkMem[i] = (uint8_t*) ps_malloc(CHUNK_SIZE);
-#else
-        chunkMem[i] = (uint8_t*) malloc(CHUNK_SIZE);
-#endif
-        if (chunkMem[i] == 0)
-            printf("- can't allocate memory chunk %d\n", i);
-    }
-    printf("- RAM heap size %u KB, free %u KB\n",
-            ESP.getHeapSize() >> 10, ESP.getFreeHeap() >> 10);
+    File boot = openSdOrSpiffs("/fd0.img", "r+");
+    if (!boot)
+        return;
+    mappedBoot.init(&boot);
 
-    const esp_partition_t* ep = esp_partition_find_first(
-        ESP_PARTITION_TYPE_DATA, (esp_partition_subtype_t) 0x01, 0
-    );
-    if (ep != 0) {
-        printf("- esp disk partition %08x\n", ep->address);
-        EspFlash::init(ep);
-        hasFlashDisk = true;
-    }
-
-    SPI.begin(14, 2, 15, 13);
-    hasSdCard = SD.begin(13, SPI, 120000000) != 0;
-
-    if (!hasSdCard)
-        printf("SD card mount failed\n");
-    else {
-        uint8_t cardType = SD.cardType();
-        if (cardType == CARD_NONE) {
-            printf("No SD card inserted\n");
-            hasSdCard = false;
-        } else {
-            const char* type = "UNKNOWN";
-            switch (cardType) {
-                case CARD_MMC:  type = "MMC";  break;
-                case CARD_SD:   type = "SDSC"; break;
-                case CARD_SDHC: type = "SDHC"; break;
-            }
-            uint32_t size = SD.cardSize() >> 20;
-            uint32_t free = (SD.totalBytes() - SD.usedBytes()) >> 20;
-            printf("- %s card, size %u MB, free %u MB:\n", type, size, free);
-            listDir(SD, "/");
-        }
-    }
-
-    hasSpiffs = SPIFFS.begin(true) != 0;
-    if (!hasSpiffs)
-        printf("No SPIFFS partition found\n");
-    else {
-        uint32_t size = SPIFFS.totalBytes() >> 10;
-        uint32_t free = (SPIFFS.totalBytes() - SPIFFS.usedBytes()) >> 10;
-        printf("- SPIFFS size %u KB, free %u KB:\n", size, free);
-        listDir(SPIFFS, "/");
-    }
-
-    File root = openSdOrSpiffs("/root.img", "r+");
+    File root = openSdOrSpiffs("/fd1.img", "r+");
     if (!root)
         return;
     mappedRoot.init(&root);
 
-    File swap = openSdOrSpiffs("/swap.img", "w+");
+    File swap = openSdOrSpiffs("/fd2.img", "w+");
     if (!swap)
         return;
     mappedSwap.init(&swap);
 
     printf("- start z80emu\n");
 
-    const uint16_t origin = 0x0100;
+    static Context context; // just static so it starts out cleared
+    Z80Reset(&context.state);
+
 #if 1
-    memcpy(mainMem + origin, rom, sizeof rom);
+    // emulated room bootstrap, loads first disk sector to 0x0000
+    mappedBoot.readBlock(0, mainMem);
+
+    // leave a copy of HEXSAVE.COM at 0x0100
+    memcpy(mainMem + 0x0100, ram, sizeof ram);
 #else
     // embeded the fuzix binary using a special platformio trick, see
     // http://docs.platformio.org/en/latest/platforms/espressif32.html
@@ -377,12 +415,11 @@ void setup () {
     extern const uint8_t fuzix_end[]   asm("_binary_fuzix_bin_end");
     unsigned size = fuzix_end - fuzix_start;
     printf("  fuzix.bin @ 0x%08x, %u b\n", (int32_t) fuzix_start, size);
+    
+    const uint16_t origin = 0x0100;
     memcpy(mainMem + origin, fuzix_start, size);
-#endif
-
-    static Context context; // just static so it starts out cleared
-    Z80Reset(&context.state);
     context.state.pc = origin;
+#endif
 
     do {
         Z80Emulate(&context.state, 5000000, &context);
