@@ -36,7 +36,7 @@ constexpr int LED = LED_BUILTIN;
 
 uint8_t mainMem [1<<16];
 
-#define NCHUNKS 45  // 180K available, e.g. three banks of 60K
+#define NCHUNKS 32  // 128K available, e.g. at least two banks of any size
 uint8_t* chunkMem [NCHUNKS]; // lots of memory on ESP32, but it's fragmented!
 
 struct MappedDisk {
@@ -274,6 +274,7 @@ void listDir (fs::FS &fs, const char * dirname) {
 
 void setup () {
     Serial.begin(115200);
+    printf("\n");
     pinMode(LED, OUTPUT);
 
 #if ESP32SD | TTGOT8
