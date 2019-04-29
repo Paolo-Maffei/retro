@@ -16,16 +16,8 @@ extern "C" {
 
 constexpr int BLKSZ = 128;
 
-#if LOLIN32
-constexpr int LED = 22; // not 5!
-#elif WROVER
-constexpr int LED = 5; // no built-in, use the LCD backlight
-#elif TTGOT8
-constexpr int LED = 21; // reusing wrover board def
-#elif ESP32SD
-constexpr int LED = -1; // doesn't appear to have an LED
-#else
-constexpr int LED = LED_BUILTIN;
+#ifndef LED
+#define LED LED_BUILTIN
 #endif
 
 const uint8_t ram [] = {
