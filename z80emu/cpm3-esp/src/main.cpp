@@ -30,7 +30,7 @@ constexpr int LED = -1; // doesn't appear to have an LED
 constexpr int LED = LED_BUILTIN;
 #endif
 
-#define BLKSZ 512
+#define BLKSZ 128
 
 bool hasSdCard, hasSpiffs, hasRawFlash, hasPsRam;
 
@@ -157,14 +157,14 @@ void diskReq (Context* z, bool out, uint8_t disk, uint16_t pos, uint16_t addr) {
             buf[j] = *mapMem(z, addr + j);
 
         if (disk == 0)
-            mappedRoot.writeBlock(pos, buf);
+            mappedBoot.writeBlock(pos, buf);
         else if (hasRawFlash)
             flassDisk.writeBlock(pos, buf);
         else
             mappedSwap.writeBlock(pos, buf);
     } else {
         if (disk == 0)
-            mappedRoot.readBlock(pos, buf);
+            mappedBoot.readBlock(pos, buf);
         else if (hasRawFlash)
             flassDisk.readBlock(pos, buf);
         else
@@ -204,9 +204,16 @@ void systemCall (Context* z, int req, int pc) {
             //  ld hl,(dmaadr)
             //  in a,(4)
             bool out = (B & 0x80) != 0;
-            uint8_t cnt = B & 0x7F;
+            uint8_t cnt = B & 0x7F, dsk = A;
+#if 1
+            uint8_t sec = DE, trk = DE >> 8;
+            uint32_t pos = 2048*dsk + 26*trk + sec;  // no skewing
+            dsk = 0; // FIXME 0x10; // fd0 i.e. (1,0)
+#else
+            uint32_t pos = DE;
+#endif
             for (int i = 0; i < cnt; ++i)
-                diskReq(z, out, A, DE + i, HL + BLKSZ * i);
+                diskReq(z, out, dsk, pos + i, HL + BLKSZ * i);
             A = 0;
             break;
         }
