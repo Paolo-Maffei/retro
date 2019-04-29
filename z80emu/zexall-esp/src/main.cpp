@@ -17,7 +17,7 @@ const uint8_t rom [] = {
 #if LOLIN32
 constexpr int LED = 5;
 #else
-constexpr int LED = BUILTIN_LED;
+constexpr int LED = LED_BUILTIN;
 #endif
 
 Context context;

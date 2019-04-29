@@ -6,15 +6,16 @@ constexpr int LED = 22; // not 5!
 constexpr int LED = 5; // no built-in, use the LCD backlight
 #elif TTGOT8
 constexpr int LED = 21; // reusing wrover board def
+#elif ESP32SD
+constexpr int LED = -1; // doesn't appear to have an LED
 #else
-constexpr int LED = BUILTIN_LED;
+constexpr int LED = LED_BUILTIN;
 #endif
 
 void setup() {
     Serial.begin(115200);
-    delay(1000);
 #ifdef BUILTIN_LED
-    Serial.printf("BUILTIN_LED = %d\n", BUILTIN_LED);
+    Serial.printf("\nBUILTIN_LED = %d\n", BUILTIN_LED);
 #endif
     pinMode(LED, OUTPUT);
 }

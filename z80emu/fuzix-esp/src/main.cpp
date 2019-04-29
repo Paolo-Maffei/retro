@@ -20,11 +20,13 @@ constexpr int LED = 22; // not 5!
 constexpr int LED = 5; // no built-in, use the LCD backlight
 #elif TTGOT8
 constexpr int LED = 21; // reusing wrover board def
+#elif ESP32SD
+constexpr int LED = -1; // doesn't appear to have an LED
 #else
-constexpr int LED = BUILTIN_LED;
+constexpr int LED = LED_BUILTIN;
 #endif
 
-#if TTGOT8
+#if ESP32SD | TTGOT8
 #define MYFS SD
 #else
 #define MYFS SPIFFS
@@ -274,7 +276,7 @@ void setup () {
     Serial.begin(115200);
     pinMode(LED, OUTPUT);
 
-#if TTGOT8
+#if ESP32SD | TTGOT8
     SPI.begin(14, 2, 15, 13);
 
     if(!SD.begin(13, SPI, 120000000)){

@@ -6,8 +6,8 @@ void setup() {
     Serial.begin(115200);
     printf("\n");
 
-#ifdef BUILTIN_LED
-    printf("BUILTIN_LED     %d\n", BUILTIN_LED);
+#ifdef LED_BUILTIN
+    printf("LED_BUILTIN     %d\n", LED_BUILTIN);
 #endif
 
     //The chip ID is essentially its MAC address(length: 6 bytes).
