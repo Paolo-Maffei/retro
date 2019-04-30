@@ -423,7 +423,6 @@ rdwr:
         ld e,a
         ld a,(hsttrk)
         ld d,a
-       ;ld de,(seksat)
         ld a,(hstdsk)
         ld hl,hstbuf
         in a,(4)
@@ -437,12 +436,8 @@ punch:
 
 ; Data area --------------------------------------------------------------------
 
-dirbuf: db 13,10,'64K CP/M Version 2.2',13,10,0
+dirbuf: db 13,10,'64K CP/M 2.2 (512b)',13,10,0
         ds dirbuf+128-$ ; scratch directory area
-
-;sekdsk: ds 1   ; seek disk number
-seksat: ds 2   ; seek sector and track number
-;dmaadr: ds 2   ; last dma address
 
 fdcst:		db	0
 
