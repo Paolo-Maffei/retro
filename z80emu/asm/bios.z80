@@ -4,10 +4,9 @@ VERS:   equ 01h
 
 ; Memory map -------------------------------------------------------------------
 
-CCP:    equ 0E800h
+CCP:    equ 0E400h
 BDOS:   equ CCP + 0806h
 BIOS:   equ CCP + 1600h
-BEND:   equ CCP + 17FEh
 
 ; low memory -------------------------------------------------------------------
 
@@ -171,10 +170,6 @@ dmaadr: ds 2   ; last dma address
 
 alv0:   ds 31  ; allocation vector 0 (max 248 blocks)
 alv1:   ds 31  ; allocation vector 1 (max 248 blocks)
-
-spare:  equ BEND-$
-        ds spare                ; BIOS base page and version number
-        dw BIOS + VERS          ; ... at end of memory
 
 ; ------------------------------------------------------------------------------
 

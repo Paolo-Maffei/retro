@@ -3,7 +3,7 @@
 ; generate the header file with this command:
 ;   z80asm -o - boot.z80 | xxd -i >src/boot.h
 
-CCP:    equ 0E800h
+CCP:    equ 0E400h
 BIOS:   equ CCP + 1600h
 
         org 0000h
