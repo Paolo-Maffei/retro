@@ -203,9 +203,9 @@ void systemCall (Context* z, int req, int pc) {
             //  in a,(4)
             bool out = (B & 0x80) != 0;
             uint8_t cnt = B & 0x7F, dsk = A;
-#if 1
-            uint8_t sec = DE, trk = DE >> 8;
             dsk = 0; // FIXME 0x10; // fd0 i.e. (1,0)
+#if 0 
+            uint8_t sec = DE, trk = DE >> 8;
             uint32_t pos = 2048*dsk + 13*trk + sec;  // no skewing FIXME
 #else
             uint32_t pos = DE;

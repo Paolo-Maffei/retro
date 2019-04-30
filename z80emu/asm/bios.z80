@@ -38,10 +38,33 @@ wboote: jp wboot    ; 1 Warm boot
 
 ; Disk Parameter Headers -------------------------------------------------------
 
-dpbase: dw 0,0,0,0,dirbuf,dpb,0,alv0
-        dw 0,0,0,0,dirbuf,dpb,0,alv1
+dpbase: dw 0,0,0,0,dirbuf,dpb0,0,alv0
+        dw 0,0,0,0,dirbuf,dpb1,0,alv1
+        dw 0,0,0,0,dirbuf,dpb2,0,alv2
 
-dpb:    dw 52  ; SPT - sectors per track
+dpb0:   dw 52  ; SPT - sectors per track
+        db 3   ; BSH - block shift factor
+        db 7   ; BLM - block mask
+        db 0   ; EXM - Extent mask
+        dw 248 ; DSM - Storage size (blocks - 1)
+        dw 63  ; DRM - Number of directory entries - 1
+        db 192 ; AL0 - 1 bit set per directory block
+        db 0   ; AL1 - ... 8 more bits
+        dw 0   ; CKS - DIR check vector size (DRM+1)/4 (0=fixed disk)
+        dw 1   ; OFF - Reserved tracks
+
+dpb1:   dw 52  ; SPT - sectors per track
+        db 3   ; BSH - block shift factor
+        db 7   ; BLM - block mask
+        db 0   ; EXM - Extent mask
+        dw 248 ; DSM - Storage size (blocks - 1)
+        dw 63  ; DRM - Number of directory entries - 1
+        db 192 ; AL0 - 1 bit set per directory block
+        db 0   ; AL1 - ... 8 more bits
+        dw 0   ; CKS - DIR check vector size (DRM+1)/4 (0=fixed disk)
+        dw 1   ; OFF - Reserved tracks
+
+dpb2:   dw 52  ; SPT - sectors per track
         db 3   ; BSH - block shift factor
         db 7   ; BLM - block mask
         db 0   ; EXM - Extent mask
@@ -108,7 +131,7 @@ reader: ld a,1Ah
 ; Disk I/O ---------------------------------------------------------------------
 
 seldsk: ld a,c
-        cp 2
+        cp 3
         jr nc,baddsk
         ld h,0
         ld l,c
@@ -128,9 +151,8 @@ baddsk: ld hl,0
         ld (usrdrv),a
         jr savdsk
 
-home:   ld c,0
-settrk: ld a,c
-        ld (sektrk),a
+home:   ld bc,0
+settrk: ld (sektrk),bc
         ret
 
 setsec: ld hl,seksec
@@ -313,7 +335,7 @@ match:
 	add	hl,de		; hl = host address
 	ex	de,hl		; now in DE
 	ld	hl,(dmaadr)	; get/put CP/M data
-	ld	c,128		; length of move
+	ld	b,128		; length of move
 	ld	a,(readop)	; which way?
 	or	a
 	jp	nz,rwmove	; skip if read
@@ -323,13 +345,13 @@ match:
 	ld	(hstwrt),a	; hstwrt = 1
 	ex	de,hl
 
-; C initially 128, DE is source, HL is dest
+; B initially 128, DE is source, HL is dest
 rwmove:
 	ld	a,(de)		; source character
 	inc	de
 	ld	(hl),a		; to dest
 	inc	hl
-	dec	c		; loop 128 times
+	dec	b		; loop 128 times
 	jp	nz,rwmove
 
 ; data has been moved to/from host buffer
@@ -365,21 +387,30 @@ sektrkcmp:
 ; hstsec = host sect #.  read "hstsiz" bytes
 ; into hstbuf and return error flag in fdcst.
 readhst:
-        ld b,1
-        jr rdwr
+        ld      b,1
+        jr      rdwr
 
 ; hstdsk = host disk #, hsttrk = host track #,
 ; hstsec = host sect #.  write "hstsiz" bytes
 ; from hstbuf and return error flag in fdcst.
 writehst:
-        ld b,1+80h
-rdwr:   ld a,(hstsec)
-        ld e,a
-        ld a,(hsttrk)
-        ld d,a
-        ld a,(hstdsk)
-        ld hl,hstbuf
-        in a,(4)
+        ld      b,1+80h
+rdwr:   ld      hl,(hsttrk)
+        ld      e,l
+        ld      d,h
+        add     hl,hl ; *2
+        add     hl,de ; *3
+        add     hl,hl ; *6
+        add     hl,hl ; *12
+        add     hl,de ; *13
+        ld      a,(hstsec)
+        ld      e,a
+        ld      d,0
+        add     hl,de ; 13*trk+sec
+	ex	de,hl
+        ld      hl,hstbuf
+        ld      a,(hstdsk)
+        in      a,(4)
         ret
 
 listst:
@@ -390,10 +421,11 @@ punch:
 
 ; Data area --------------------------------------------------------------------
 
-dirbuf: db 13,10,'64K CP/M 2.2 (512b)',13,10,0
-        ds dirbuf+128-$ ; scratch directory area
-
 fdcst:	db	0
+
+dirbuf: db 13,10,'64K CP/M 2.2 (512b)',13,10,0
+
+        org dirbuf+128
 
 ; Uninitialized data -----------------------------------------------------------
 
@@ -422,7 +454,8 @@ hstbuf:	ds	hstsiz	; host buffer
 
 
 alv0:   ds 31  ; allocation vector 0 (max 248 blocks)
-alv1:   ds 31  ; allocation vector 1 (max 248 blocks)
+alv1:   ds 89  ; allocation vector 1 (max 712 blocks)
+alv2:   ds 128 ; allocation vector 2 (max 1024 blocks)
 
 ; ------------------------------------------------------------------------------
 
