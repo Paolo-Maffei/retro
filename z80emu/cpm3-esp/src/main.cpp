@@ -14,7 +14,7 @@ extern "C" {
 #include "macros.h"
 }
 
-constexpr int BLKSZ = 128;
+constexpr int BLKSZ = 512;
 
 #ifndef LED
 #define LED LED_BUILTIN

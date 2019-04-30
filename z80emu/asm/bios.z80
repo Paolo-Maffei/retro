@@ -71,8 +71,8 @@ wboot:  di
         ld sp,0100h
 
         ld a,(usrdrv)
-        ld b,44                 ; read CCP + BDOS into memory
-        ld de,1                 ; skip first sector on first track
+        ld b,11                 ; read CCP + BDOS into memory (5.5 KB)
+        ld de,2                 ; skip first first 2 blocks on first track
         ld hl,CCP               ; start address
         in a,(4)                ; disk read request
 
