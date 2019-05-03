@@ -1,5 +1,4 @@
 #include <SD.h>
-#include <SD_MMC.h>
 
 #define printf Serial.printf
 
@@ -187,18 +186,17 @@ gpio_set_pull_mode(GPIO_NUM_12, GPIO_PULLUP_ONLY); // D2, 4-line mode only
 gpio_set_pull_mode(GPIO_NUM_13, GPIO_PULLUP_ONLY); // D3, 4- and 1-line modes
 #endif
     
-#if 0
-    if (!SD_MMC.begin("/sdcard", true)) {
-        Serial.println("failed!");
-        return;
-    }
+#if TTGOT2
+    SPI.begin(18, 19, 23, 5);
+    if(!SD.begin(5, SPI, 12000000)) // looks like µSD still works @ 120 MHz
 #else
     SPI.begin(14, 2, 15, 13);
-    if(!SD.begin(13, SPI, 12000000)){ // looks like µSD still works @ 120 MHz
+    if(!SD.begin(13, SPI, 12000000)) // looks like µSD still works @ 120 MHz
+#endif
+    {
         Serial.println("Card Mount Failed");
         return;
     }
-#endif
 
     Serial.println("OK!");
 
