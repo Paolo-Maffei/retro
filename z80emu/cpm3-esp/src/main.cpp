@@ -38,7 +38,7 @@ uint8_t mainMem [1<<16];
 uint8_t* chunkMem [CHUNK_TOTAL]; // lots of memory on ESP32, but fragmented!
 
 struct MappedDisk {
-    File* fp;
+    File* fp = 0;
 
     void init (File* fptr) {
         fp = fptr;
@@ -141,35 +141,39 @@ static void setBankSplit (Context* z, uint8_t page) {
 #endif
 }
 
-void diskReq (Context* z, bool out, uint8_t disk, uint16_t pos, uint16_t addr) {
+int diskReq (Context* z, bool out, uint8_t disk, uint16_t pos, uint16_t addr) {
 #if 0
     //void* mem = mapMem(z, addr);
     printf("HD%d wr %d mem %d:0x%x pos %d\n",
             disk, out, z->bank, addr, pos);
 #endif
-    // use intermediate buffer in case I/O spans different chunks
+    // use intermediate buffer, but only when I/O spans different chunks
     uint8_t buf [BLKSZ];
+    uint8_t *first = mapMem(z, addr), *last = mapMem(z, addr+BLKSZ-1);
+    uint8_t *ptr = first+BLKSZ-1 == last ? first : buf;
 
     if (out) {
-        for (int j = 0; j < sizeof buf; ++j)
-            buf[j] = *mapMem(z, addr + j);
+        if (ptr == buf)
+            for (int i = 0; i < sizeof buf; ++i)
+                buf[i] = *mapMem(z, addr + i);
 
         if (disk == 0)
-            mappedBoot.writeBlock(pos, buf);
+            mappedBoot.writeBlock(pos, ptr);
         else if (hasRawFlash)
-            flassDisk.writeBlock(pos, buf);
+            flassDisk.writeBlock(pos, ptr);
         else
-            mappedSwap.writeBlock(pos, buf);
+            mappedSwap.writeBlock(pos, ptr);
     } else {
         if (disk == 0)
-            mappedBoot.readBlock(pos, buf);
+            mappedBoot.readBlock(pos, ptr);
         else if (hasRawFlash)
-            flassDisk.readBlock(pos, buf);
+            flassDisk.readBlock(pos, ptr);
         else
-            mappedSwap.readBlock(pos, buf);
+            mappedSwap.readBlock(pos, ptr);
 
-        for (int j = 0; j < sizeof buf; ++j)
-            *mapMem(z, addr + j) = buf[j];
+        if (ptr == buf)
+            for (int i = 0; i < sizeof buf; ++i)
+                *mapMem(z, addr + i) = buf[i];
     }
 }
 
@@ -201,18 +205,15 @@ void systemCall (Context* z, int req, int pc) {
             //  ld de,(seksat)
             //  ld hl,(dmaadr)
             //  in a,(4)
+            //  ld (result),a
             bool out = (B & 0x80) != 0;
-            uint8_t cnt = B & 0x7F, dsk = A;
-            dsk = 0; // FIXME 0x10; // fd0 i.e. (1,0)
-#if 0 
-            uint8_t sec = DE, trk = DE >> 8;
-            uint32_t pos = 2048*dsk + 13*trk + sec;  // no skewing FIXME
-#else
-            uint32_t pos = DE;
-#endif
-            for (int i = 0; i < cnt; ++i)
-                diskReq(z, out, dsk, pos + i, HL + BLKSZ * i);
+            uint8_t cnt = B & 0x7F;
             A = 0;
+            for (int i = 0; i < cnt; ++i) {
+                A = diskReq(z, out, A, DE + i, HL + BLKSZ * i);
+                if (A != 0)
+                    break;
+            }
             break;
         }
         case 5: // time get/set
@@ -441,11 +442,22 @@ void setup () {
     static Context context; // just static so it starts out cleared
     Z80Reset(&context.state);
 
-    // emulated room bootstrap, loads first disk sector to 0x0000
-    mappedBoot.readBlock(0, mainMem);
+    // load and launch fuzix.bin if it exists
+    const char* kernel = "/fuzix.bin";
+    const uint16_t origin = 0x0100;
 
-    // leave a copy of HEXSAVE.COM at 0x0100
-    memcpy(mainMem + 0x0100, ram, sizeof ram);
+    File fp = openSdOrSpiffs(kernel, "r");
+    if (fp && fp.read(mainMem + origin, 60000) > 1000) {
+        fp.close();
+        printf("- launching fuzix.bin\n");
+        context.state.pc = origin;
+    } else {
+        // emulated room bootstrap, loads first disk sector to 0x0000
+        mappedBoot.readBlock(0, mainMem);
+
+        // leave a copy of HEXSAVE.COM at 0x0100
+        memcpy(mainMem + 0x0100, ram, sizeof ram);
+    }
 
     do {
         Z80Emulate(&context.state, 5000000, &context);
