@@ -31,8 +31,7 @@ extern const uint8_t system_start[] asm("_binary_system_bin_start");
 extern const uint8_t system_end[]   asm("_binary_system_bin_end");
 
 bool hasSdCard, hasSpiffs, hasRawFlash, hasPsRam;
-
-uint8_t mainMem [1<<16];
+uint8_t mainMem [1<<16], *ramDisk;
 
 #define NCHUNKS 32  // 128K available, e.g. at least two banks of any size
 uint8_t* chunkMem [CHUNK_TOTAL]; // lots of memory on ESP32, but fragmented!
@@ -186,13 +185,17 @@ int diskReq (Context* z, bool out, uint8_t dev, uint16_t pos, uint16_t addr) {
             for (int i = 0; i < sizeof buf; ++i)
                 buf[i] = *mapMem(z, addr+i);
 
-        if (type == 2 && hasRawFlash)
-            n = flashDisk.writeBlock(blk, ptr); // TODO psram
+        if (type == 2 && hasPsRam)
+            memcpy(ramDisk + blk*BLKSZ, ptr, n = BLKSZ);
+        else if (type == 2 && hasRawFlash)
+            n = flashDisk.writeBlock(blk, ptr);
         else
             n = mappedDisk[unit].writeBlock(blk, ptr);
     } else {
-        if (type == 2 && hasRawFlash)
-            n = flashDisk.readBlock(blk, ptr); // TODO psram
+        if (type == 2 && hasPsRam)
+            memcpy(ptr, ramDisk + blk*BLKSZ, n = BLKSZ);
+        else if (type == 2 && hasRawFlash)
+            n = flashDisk.readBlock(blk, ptr);
         else
             n = mappedDisk[unit].readBlock(blk, ptr);
 
@@ -427,6 +430,10 @@ void allocateChunks () {
             return;
         }
     }
+
+    // TODO ramdisk size is fixed 3.5 MB for now, of which 1 MB swap
+    ramDisk = (uint8_t*) ps_malloc(7<<19);
+
     printf("- PSRAM size %u KB, available %u KB\n",
             ESP.getPsramSize() >> 10, ESP.getFreePsram() >> 10);
 }
@@ -458,7 +465,7 @@ void setup () {
         printf("Can't find root disk\n");
     mappedDisk[4].init(&root);
 
-    if (!hasRawFlash) {
+    if (!hasPsRam && !hasRawFlash) {
         swap = openSdOrSpiffs("/swap.img", "w+");
         if (!swap)
             printf("Can't find swap disk\n");
