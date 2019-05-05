@@ -37,6 +37,8 @@ uint8_t mainMem [1<<16];
 #define NCHUNKS 32  // 128K available, e.g. at least two banks of any size
 uint8_t* chunkMem [CHUNK_TOTAL]; // lots of memory on ESP32, but fragmented!
 
+File boot, root, swap;
+
 struct MappedDisk {
     File* fp = 0;
 
@@ -45,6 +47,10 @@ struct MappedDisk {
     }
 
     int readBlock (unsigned pos, void* buf) {
+        if (fp == 0) {
+            printf("can't read block %d, file not open\n", pos);
+            return 0;
+        }
         fp->seek(pos * BLKSZ);
         int e = fp->read((uint8_t*) buf, BLKSZ);
         if (e != BLKSZ)
@@ -60,6 +66,10 @@ struct MappedDisk {
     }
 
     int writeBlock (unsigned pos, void const* buf) {
+        if (fp == 0) {
+            printf("can't write block %d, file not open\n", pos);
+            return 0;
+        }
         fp->seek(pos * BLKSZ);
         int e = fp->write((const uint8_t*) buf, BLKSZ);
         if (e != BLKSZ)
@@ -174,7 +184,7 @@ int diskReq (Context* z, bool out, uint8_t dev, uint16_t pos, uint16_t addr) {
     if (out) {
         if (ptr == buf)
             for (int i = 0; i < sizeof buf; ++i)
-                buf[i] = *mapMem(z, addr + i);
+                buf[i] = *mapMem(z, addr+i);
 
         if (type == 2 && hasRawFlash)
             n = flashDisk.writeBlock(blk, ptr); // TODO psram
@@ -188,7 +198,7 @@ int diskReq (Context* z, bool out, uint8_t dev, uint16_t pos, uint16_t addr) {
 
         if (ptr == buf)
             for (int i = 0; i < sizeof buf; ++i)
-                *mapMem(z, addr + i) = buf[i];
+                *mapMem(z, addr+i) = buf[i];
     }
     //return n == BLKSZ ? 0 : 1; // TODO different error returns
     return 0;
@@ -285,9 +295,11 @@ void listDir (fs::FS &fs, const char * dirname) {
 
     File file;
     while ((file = root.openNextFile()) != 0) {
+        if (file.name()[1] == '.')
+            continue;
         if (file.isDirectory())
             printf("    %s/\n", file.name());
-        else if (file.name()[1] != '.')
+        else
             printf("    %-15s %8d b\n", file.name(), file.size());
         //file.close();
     }
@@ -353,12 +365,12 @@ File openSdOrSpiffs (const char* name, const char* mode) {
     File fd;
     if (hasSdCard) {
         fd = SD.open(name, mode);
-        if (fd.size() > 0)
+        if (fd && SD.exists(name))
             printf("- SD: %s (%d b)\n", name, fd.size());
     }
     if (!fd && hasSpiffs) {
         fd = SPIFFS.open(name, mode);
-        if (fd.size() > 0)
+        if (fd && SPIFFS.exists(name))
             printf("- SPIFFS: %s (%d b)\n", name, fd.size());
     }
     return fd;
@@ -384,7 +396,7 @@ bool createSystemDisk (File& fp, const char* name) {
             return false;
 
     printf("- system.bin @ 0x%08x, %u b\n", (int32_t) system_start, size);
-    fp.seek(0);
+    fp.flush();
     return true;
 }
 
@@ -431,7 +443,7 @@ void setup () {
     hasSpiffs = initSpiffs();
     hasSdCard = initSdCard();
 
-    File boot = openSdOrSpiffs("/fd0.img", "r+");
+    boot = openSdOrSpiffs("/fd0.img", "r+");
     if (boot.size() == 0) {
         printf("No boot disk, creating ...\n");
         if (!createSystemDisk(boot, "/fd0.img")) {
@@ -441,15 +453,15 @@ void setup () {
     }
     mappedDisk[0].init(&boot);
 
-    File root = openSdOrSpiffs("/hda.img", "r+");
+    root = openSdOrSpiffs("/hda.img", "r+");
     if (!root)
-        printf("Can't open root disk\n");
+        printf("Can't find root disk\n");
     mappedDisk[4].init(&root);
 
     if (!hasRawFlash) {
-        File swap = openSdOrSpiffs("/swap.img", "w+");
+        swap = openSdOrSpiffs("/swap.img", "w+");
         if (!swap)
-            printf("Can't open swap disk\n");
+            printf("Can't find swap disk\n");
         mappedDisk[8].init(&swap);
     }
 
