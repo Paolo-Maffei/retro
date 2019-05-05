@@ -110,13 +110,14 @@ class SpiFlashWear {
 public:
     void init () {}
 
-    void readBlock (int blknum, void* buf) {
+    int readBlock (unsigned blknum, void* buf) {
         int blk = renumberBlock(blknum);
         loadMap(blk);
         readUnmapped(remap(blk), buf);
+        return blockSize; // TODO error handling
     }
 
-    void writeBlock (int blknum, const void* buf) {
+    int writeBlock (unsigned blknum, const void* buf) {
         int blk = renumberBlock(blknum);
         loadMap(blk);
         int slot = findFreeSlot();
@@ -125,5 +126,6 @@ public:
             slot = 1; // the map is now free again
         }
         writeNewSlot(slot, blk, buf);
+        return blockSize; // TODO error handling
     }
 };

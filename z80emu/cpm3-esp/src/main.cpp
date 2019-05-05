@@ -44,7 +44,7 @@ struct MappedDisk {
         fp = fptr;
     }
 
-    void readBlock (unsigned pos, void* buf) {
+    int readBlock (unsigned pos, void* buf) {
         fp->seek(pos * BLKSZ);
         int e = fp->read((uint8_t*) buf, BLKSZ);
         if (e != BLKSZ)
@@ -56,16 +56,18 @@ struct MappedDisk {
             printf(" %02x", ((uint8_t*) buf)[i]);
         printf("\n");
 #endif
+        return e;
     }
 
-    void writeBlock (unsigned pos, void const* buf) {
+    int writeBlock (unsigned pos, void const* buf) {
         fp->seek(pos * BLKSZ);
         int e = fp->write((const uint8_t*) buf, BLKSZ);
         if (e != BLKSZ)
             printf("W %d? fp %08x pos %d buf %08x\n",
                     e, (int32_t) fp, pos, (int32_t) buf);
+        return e;
     }
-} mappedBoot, mappedRoot, mappedSwap;
+} mappedDisk[9]; // fd0..fd3 => 0..3, hda..hdd => 4..7, rd0..rd1 => 8
 
 struct EspFlash {
     constexpr static uint32_t pageSize = 4096;
@@ -141,47 +143,54 @@ static void setBankSplit (Context* z, uint8_t page) {
 #endif
 }
 
-int diskReq (Context* z, bool out, uint8_t disk, uint16_t pos, uint16_t addr) {
-#if 0
-    printf("disk %d wr %d mem %d:0x%x pos %d\n",
-            disk, out, z->bank, addr, pos);
-#endif
+int diskReq (Context* z, bool out, uint8_t dev, uint16_t pos, uint16_t addr) {
     // use intermediate buffer, but only when I/O spans different chunks
     uint8_t buf [BLKSZ];
     uint8_t *first = mapMem(z, addr), *last = mapMem(z, addr+BLKSZ-1);
     uint8_t *ptr = first+BLKSZ-1 == last ? first : buf;
 
+    int type = dev >> 6;
+    int unit = dev & 0x0F;
     // each hard disk can be split into up to 16 partitions of 8 MB each
     unsigned blk = pos; // switch to 32-bit to handle disks > 32 MB
-    if (64 <= disk && disk < 128) {
-        blk += 16384 * (disk % 16);  // hda1, hda2, etc - i.e. N*8 MB higher
-        disk = 64 + (disk / 16) % 4; // lower bits are now the disk unit
-    }
 
+    switch (type) {
+        case 1: // HD
+            blk += 16384 * unit;        // hda1, hda2, etc - i.e. N*8 MB higher
+            unit = (dev >> 4) & 0x03;   // unit is taken from bits 4 & 5
+            unit += 4;
+            break;
+        case 2: // RD
+            blk += 2048 * unit;         // rd0, rd1, etc - i.e. N*1 MB higher
+            unit = 8;                   // all mapped to a single device
+            break;
+    }
+#if 0
+    printf("dev %d type %d unit %d wr %d mem %d:0x%x pos %d blk %d\n",
+            dev, type, unit, out, z->bank, addr, pos, blk);
+#endif
+
+    int n = 0;
     if (out) {
         if (ptr == buf)
             for (int i = 0; i < sizeof buf; ++i)
                 buf[i] = *mapMem(z, addr + i);
 
-        if (disk == 0)
-            mappedBoot.writeBlock(blk, ptr);
-        else if (hasRawFlash)
-            flashDisk.writeBlock(blk, ptr);
+        if (type == 2 && hasRawFlash)
+            n = flashDisk.writeBlock(blk, ptr); // TODO psram
         else
-            mappedRoot.writeBlock(blk, ptr);
+            n = mappedDisk[unit].writeBlock(blk, ptr);
     } else {
-        if (disk == 0)
-            mappedBoot.readBlock(blk, ptr);
-        else if (hasRawFlash)
-            flashDisk.readBlock(blk, ptr);
+        if (type == 2 && hasRawFlash)
+            n = flashDisk.readBlock(blk, ptr); // TODO psram
         else
-            mappedRoot.readBlock(blk, ptr);
+            n = mappedDisk[unit].readBlock(blk, ptr);
 
         if (ptr == buf)
             for (int i = 0; i < sizeof buf; ++i)
                 *mapMem(z, addr + i) = buf[i];
     }
-
+    //return n == BLKSZ ? 0 : 1; // TODO different error returns
     return 0;
 }
 
@@ -278,7 +287,7 @@ void listDir (fs::FS &fs, const char * dirname) {
     while ((file = root.openNextFile()) != 0) {
         if (file.isDirectory())
             printf("    %s/\n", file.name());
-        else
+        else if (file.name()[1] != '.')
             printf("    %-15s %8d b\n", file.name(), file.size());
         //file.close();
     }
@@ -287,10 +296,7 @@ void listDir (fs::FS &fs, const char * dirname) {
 }
 
 bool initPsRam () {
-    if (ESP.getPsramSize() > 1000000)
-        return true;
-    printf("- no PSRAM available\n");
-    return false;
+    return ESP.getPsramSize() > 1000000;
 }
 
 bool initRawFlash () {
@@ -422,8 +428,8 @@ void setup () {
     allocateChunks(); // allocate before SD and SPIFFS are initialised
 
     hasRawFlash = initRawFlash ();
-    hasSdCard = initSdCard();
     hasSpiffs = initSpiffs();
+    hasSdCard = initSdCard();
 
     File boot = openSdOrSpiffs("/fd0.img", "r+");
     if (boot.size() == 0) {
@@ -433,19 +439,19 @@ void setup () {
             return;
         }
     }
-    mappedBoot.init(&boot);
+    mappedDisk[0].init(&boot);
 
     File root = openSdOrSpiffs("/hda.img", "r+");
     if (!root)
         printf("Can't open root disk\n");
-    mappedRoot.init(&root);
+    mappedDisk[4].init(&root);
 
-    File swap = openSdOrSpiffs("/fd2.img", "w+");
-    if (!swap)
-        printf("Can't open swap disk\n");
-    mappedSwap.init(&swap);
-
-    printf("- start z80emu\n");
+    if (!hasRawFlash) {
+        File swap = openSdOrSpiffs("/swap.img", "w+");
+        if (!swap)
+            printf("Can't open swap disk\n");
+        mappedDisk[8].init(&swap);
+    }
 
     static Context context; // just static so it starts out cleared
     Z80Reset(&context.state);
@@ -461,11 +467,13 @@ void setup () {
         context.state.pc = origin;
     } else {
         // emulated room bootstrap, loads first disk sector to 0x0000
-        mappedBoot.readBlock(0, mainMem);
+        mappedDisk[0].readBlock(0, mainMem);
 
         // leave a copy of HEXSAVE.COM at 0x0100
         memcpy(mainMem + 0x0100, ram, sizeof ram);
     }
+
+    printf("- start z80emu\n");
 
     do {
         Z80Emulate(&context.state, 5000000, &context);
