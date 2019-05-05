@@ -44,7 +44,7 @@ struct MappedDisk {
         fp = fptr;
     }
 
-    void readBlock (int pos, void* buf) {
+    void readBlock (unsigned pos, void* buf) {
         fp->seek(pos * BLKSZ);
         int e = fp->read((uint8_t*) buf, BLKSZ);
         if (e != BLKSZ)
@@ -58,7 +58,7 @@ struct MappedDisk {
 #endif
     }
 
-    void writeBlock (int pos, void const* buf) {
+    void writeBlock (unsigned pos, void const* buf) {
         fp->seek(pos * BLKSZ);
         int e = fp->write((const uint8_t*) buf, BLKSZ);
         if (e != BLKSZ)
@@ -97,7 +97,7 @@ struct EspFlash {
 
 const esp_partition_t* EspFlash::base = 0;
 
-SpiFlashWear<EspFlash,BLKSZ> flassDisk;
+SpiFlashWear<EspFlash,BLKSZ> flashDisk;
 
 static void setBankSplit (Context* z, uint8_t page) {
     z->split = mainMem + (page << 8);
@@ -143,8 +143,7 @@ static void setBankSplit (Context* z, uint8_t page) {
 
 int diskReq (Context* z, bool out, uint8_t disk, uint16_t pos, uint16_t addr) {
 #if 0
-    //void* mem = mapMem(z, addr);
-    printf("HD%d wr %d mem %d:0x%x pos %d\n",
+    printf("disk %d wr %d mem %d:0x%x pos %d\n",
             disk, out, z->bank, addr, pos);
 #endif
     // use intermediate buffer, but only when I/O spans different chunks
@@ -152,29 +151,38 @@ int diskReq (Context* z, bool out, uint8_t disk, uint16_t pos, uint16_t addr) {
     uint8_t *first = mapMem(z, addr), *last = mapMem(z, addr+BLKSZ-1);
     uint8_t *ptr = first+BLKSZ-1 == last ? first : buf;
 
+    // each hard disk can be split into up to 16 partitions of 8 MB each
+    unsigned blk = pos; // switch to 32-bit to handle disks > 32 MB
+    if (64 <= disk && disk < 128) {
+        blk += 16384 * (disk % 16);  // hda1, hda2, etc - i.e. N*8 MB higher
+        disk = 64 + (disk / 16) % 4; // lower bits are now the disk unit
+    }
+
     if (out) {
         if (ptr == buf)
             for (int i = 0; i < sizeof buf; ++i)
                 buf[i] = *mapMem(z, addr + i);
 
         if (disk == 0)
-            mappedBoot.writeBlock(pos, ptr);
+            mappedBoot.writeBlock(blk, ptr);
         else if (hasRawFlash)
-            flassDisk.writeBlock(pos, ptr);
+            flashDisk.writeBlock(blk, ptr);
         else
-            mappedSwap.writeBlock(pos, ptr);
+            mappedRoot.writeBlock(blk, ptr);
     } else {
         if (disk == 0)
-            mappedBoot.readBlock(pos, ptr);
+            mappedBoot.readBlock(blk, ptr);
         else if (hasRawFlash)
-            flassDisk.readBlock(pos, ptr);
+            flashDisk.readBlock(blk, ptr);
         else
-            mappedSwap.readBlock(pos, ptr);
+            mappedRoot.readBlock(blk, ptr);
 
         if (ptr == buf)
             for (int i = 0; i < sizeof buf; ++i)
                 *mapMem(z, addr + i) = buf[i];
     }
+
+    return 0;
 }
 
 void systemCall (Context* z, int req, int pc) {
@@ -207,10 +215,10 @@ void systemCall (Context* z, int req, int pc) {
             //  in a,(4)
             //  ld (result),a
             bool out = (B & 0x80) != 0;
-            uint8_t cnt = B & 0x7F;
+            uint8_t cnt = B & 0x7F, dsk = A;
             A = 0;
             for (int i = 0; i < cnt; ++i) {
-                A = diskReq(z, out, A, DE + i, HL + BLKSZ * i);
+                A = diskReq(z, out, dsk, DE + i, HL + BLKSZ * i);
                 if (A != 0)
                     break;
             }
@@ -427,7 +435,7 @@ void setup () {
     }
     mappedBoot.init(&boot);
 
-    File root = openSdOrSpiffs("/fd1.img", "r+");
+    File root = openSdOrSpiffs("/hda.img", "r+");
     if (!root)
         printf("Can't open root disk\n");
     mappedRoot.init(&root);
