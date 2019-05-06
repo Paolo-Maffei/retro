@@ -8,6 +8,8 @@ constexpr int LED = 5; // no built-in, use the LCD backlight
 constexpr int LED = -1; // haven't found a LED pin yet
 #elif TTGOT8
 constexpr int LED = 21; // reusing wrover board def
+#elif TTGOMINI32
+constexpr int LED = 22; // by trial and error
 #elif ESP32SD
 constexpr int LED = -1; // doesn't appear to have an LED
 #else
