@@ -30,11 +30,11 @@ const uint8_t ram [] = {
 extern const uint8_t system_start[] asm("_binary_system_bin_start");
 extern const uint8_t system_end[]   asm("_binary_system_bin_end");
 
-bool hasSdCard, hasSpiffs, hasRawFlash, hasPsRam;
+bool hasSdCard, hasSpiffs, hasRawFlash, hasExtraRam;
 uint8_t mainMem [1<<16], *ramDisk;
 
-#define NCHUNKS 32  // 128K available, e.g. at least two banks of any size
-uint8_t* chunkMem [CHUNK_TOTAL]; // lots of memory on ESP32, but fragmented!
+#define MIN_CHUNKS 32  // 128K available, e.g. at least two banks of any size
+uint8_t* chunkMem [MAX_CHUNKS]; // lots of memory on ESP32, but fragmented!
 
 File boot, root, swap;
 
@@ -55,12 +55,6 @@ struct MappedDisk {
         if (e != BLKSZ)
             printf("r %d? fp %08x pos %d buf %08x\n",
                     e, (int32_t) fp, pos, (int32_t) buf);
-#if 0
-        printf("\t\t\t      ");
-        for (int i = 0; i < 16; ++i)
-            printf(" %02x", ((uint8_t*) buf)[i]);
-        printf("\n");
-#endif
         return e;
     }
 
@@ -115,41 +109,25 @@ static void setBankSplit (Context* z, uint8_t page) {
     memset(z->offset, 0, sizeof z->offset);
 
     int cpb = ((page << 8) + CHUNK_SIZE - 1) / CHUNK_SIZE; // chunks per bank
+    int chunksUsed = 0;
+
     // for each bank 1..up, assign as many chunks as needed for that bank
-    for (int i = 1, n = 0; i < NBANKS && n < NCHUNKS; ++i)
+    for (int i = 1; i < MAX_BANKS && chunksUsed < MAX_CHUNKS; ++i)
         for (int j = 0; j < cpb; ++j) {
-            // the offset adjusts the calculated address to point into the chunk
             // the first <cpb> entries remain zero, i.e. use unbanked mainMem
             int pos = i * CHUNK_COUNT + j;
-            z->offset[pos] = chunkMem[n] - mainMem - j * CHUNK_SIZE;
-            if (++n >= NCHUNKS)
+            if (chunksUsed >= MAX_CHUNKS || chunkMem[chunksUsed] == 0)
                 break;
+            // the offset adjusts the calculated address to point into the chunk
+            z->offset[pos] = chunkMem[chunksUsed++] - mainMem - j * CHUNK_SIZE;
         }
 
     // number of fully populated banks, incl main mem
-    z->nbanks = NCHUNKS / cpb + 1;
-    if (hasPsRam || z->nbanks > NBANKS)
-        z->nbanks = NBANKS;
+    z->nbanks = chunksUsed / cpb + 1;
+    if (z->nbanks > MAX_BANKS)
+        z->nbanks = MAX_BANKS;
 
-#if 0
-    printf("setBank %02d=%04x, CHUNK_SIZE %d, NBANKS %d, NCHUNKS %d, cpb %d\n",
-            page, page << 8, CHUNK_SIZE, NBANKS, NCHUNKS, cpb);
-    printf("%d chunks:\n", NCHUNKS);
-    for (int i = 0; i < NCHUNKS; ++i)
-        printf("%4d: %08x\n", i, chunkMem[i]);
-    printf("%d offsets:\n", CHUNK_TOTAL);
-    for (int i = 0; i < CHUNK_TOTAL; ++i)
-        printf("%4d: off %9d -> %x\n",
-                i, z->offset[i], mainMem + z->offset[i]);
-    for (int b = 0; b < NBANKS; ++b) {
-        printf("bank %d test:", b);
-        z->bank = b;
-        for (int i = 0; i < 6; ++i)
-            printf(" %08x", mapMem(z, 1024 * i));
-        printf("\n");
-    }
-    z->bank = 0;
-#endif
+    printf("- split 0x%02X => %d banks\n", page, z->nbanks);
 }
 
 int diskReq (Context* z, bool out, uint8_t dev, uint16_t pos, uint16_t addr) {
@@ -185,14 +163,14 @@ int diskReq (Context* z, bool out, uint8_t dev, uint16_t pos, uint16_t addr) {
             for (int i = 0; i < sizeof buf; ++i)
                 buf[i] = *mapMem(z, addr+i);
 
-        if (type == 2 && hasPsRam)
+        if (type == 2 && hasExtraRam)
             memcpy(ramDisk + blk*BLKSZ, ptr, n = BLKSZ);
         else if (type == 2 && hasRawFlash)
             n = flashDisk.writeBlock(blk, ptr);
         else
             n = mappedDisk[unit].writeBlock(blk, ptr);
     } else {
-        if (type == 2 && hasPsRam)
+        if (type == 2 && hasExtraRam)
             memcpy(ptr, ramDisk + blk*BLKSZ, n = BLKSZ);
         else if (type == 2 && hasRawFlash)
             n = flashDisk.readBlock(blk, ptr);
@@ -276,9 +254,9 @@ void systemCall (Context* z, int req, int pc) {
             uint8_t *src = mainMem + DE, *dst = mainMem + HL;
             // never map above the split, i.e. in the common area
             if (dst < z->split)
-                dst += z->offset[(A>>4) % NBANKS];
+                dst += z->offset[(A>>4) % MAX_BANKS];
             if (src < z->split)
-                src += z->offset[A % NBANKS];
+                src += z->offset[A % MAX_BANKS];
             // TODO careful, this won't work across the split!
             memcpy(dst, src, BC);
             DE += BC;
@@ -304,13 +282,10 @@ void listDir (fs::FS &fs, const char * dirname) {
             printf("    %s/\n", file.name());
         else
             printf("    %-15s %8d b\n", file.name(), file.size());
-        //file.close();
     }
-
-    //root.close();
 }
 
-bool initPsRam () {
+bool initExtraRam () {
     return ESP.getPsramSize() > 1000000;
 }
 
@@ -408,7 +383,7 @@ void allocateChunks () {
 
     //heap_caps_print_heap_info(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     //printf("- free %d max %d\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
-    for (int i = 0; i < NCHUNKS; ++i) {
+    for (int i = 0; i < MIN_CHUNKS; ++i) {
         chunkMem[i] = (uint8_t*) malloc(CHUNK_SIZE);
         if (chunkMem[i] == 0) {
             printf("- can't allocate RAM chunk %d\n", i);
@@ -418,21 +393,21 @@ void allocateChunks () {
     printf("- RAM heap size %u KB, free %u KB\n",
             ESP.getHeapSize() >> 10, ESP.getFreeHeap() >> 10);
 
-    // with PSRAM, we can allocate additional chunks for the rest of the banks
+    // with extra RAM, allocate additional chunks for the rest of the banks
     // TODO there's no need to use small chunks for this as well
-    if (!hasPsRam)
+    if (!hasExtraRam)
         return;
 
-    for (int i = NCHUNKS; i < CHUNK_TOTAL; ++i) {
+    for (int i = MIN_CHUNKS; i < MAX_CHUNKS; ++i) {
         chunkMem[i] = (uint8_t*) ps_malloc(CHUNK_SIZE);
         if (chunkMem[i] == 0) {
-            printf("- can't allocate PSRAM chunk %d\n", i);
+            printf("- can't allocate extra RAM chunk %d\n", i);
             return;
         }
     }
 
-    // TODO ramdisk size is fixed 3.5 MB for now, of which 1 MB swap
-    ramDisk = (uint8_t*) ps_malloc(7<<19);
+    // TODO ramdisk size is fixed 3 MB for now, of which 1 MB swap
+    ramDisk = (uint8_t*) ps_malloc(3<<20);
 
     printf("- PSRAM size %u KB, available %u KB\n",
             ESP.getPsramSize() >> 10, ESP.getFreePsram() >> 10);
@@ -443,7 +418,7 @@ void setup () {
     printf("\n");
     pinMode(LED, OUTPUT);
 
-    hasPsRam = initPsRam();
+    hasExtraRam = initExtraRam();
     allocateChunks(); // allocate before SD and SPIFFS are initialised
 
     hasRawFlash = initRawFlash ();
@@ -465,11 +440,12 @@ void setup () {
         printf("Can't find root disk\n");
     mappedDisk[4].init(&root);
 
-    if (!hasPsRam && !hasRawFlash) {
+    if (!hasExtraRam && !hasRawFlash) {
         swap = openSdOrSpiffs("/swap.img", "w+");
-        if (!swap)
+        if (swap)
+            mappedDisk[8].init(&swap);
+        else
             printf("Can't find swap disk\n");
-        mappedDisk[8].init(&swap);
     }
 
     static Context context; // just static so it starts out cleared
@@ -481,7 +457,6 @@ void setup () {
 
     File fp = openSdOrSpiffs(kernel, "r");
     if (fp && fp.read(mainMem + origin, 60000) > 1000) {
-        fp.close();
         printf("- launching fuzix.bin\n");
         context.state.pc = origin;
     } else {
