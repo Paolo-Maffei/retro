@@ -1,4 +1,4 @@
-// Bring-up test code for the ez-retro, i.e. eZ80 connected to a Blue Pill
+// Bring-up test code for the ez-retro, i.e. eZ80 connected to a Wide Pill
 //
 // hello ram test: a2zwjcb
 // hello flash test: a2zfjcba0zwjcb
@@ -74,6 +74,8 @@ void ezInit () {
     timer.pwm(1);
 #endif
 }
+
+////////////////////////////////////////////////////////////////////////////////
 
 void ezReset () {
     RST = 0;
@@ -342,6 +344,8 @@ int memSizer () {
             }
     return 0; // no sensible memory size detected
 }
+
+////////////////////////////////////////////////////////////////////////////////
 
 int main() {
     console.init();
