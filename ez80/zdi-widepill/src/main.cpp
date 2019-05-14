@@ -15,7 +15,7 @@
 #include <jee.h>
 #include <string.h>
 
-#define SLOW 1  // switches between 4 and 36 MHz clocks (flash demo assumes 4)
+#define SLOW 0  // switches between 4 and 36 MHz clocks (flash demo assumes 4)
 
 UartBufDev< PinA<9>, PinA<10> > console;
 UartBufDev< PinA<2>, PinA<3> > serial;
