@@ -9,6 +9,8 @@ int printf(const char* fmt, ...) {
 
 #if BLUEPILL
 PinC<13> led;
+#elif WIDEPILL
+PinA<1> led;
 #elif CIRCLE407
 PinB<9> led;
 #elif BLACK407
