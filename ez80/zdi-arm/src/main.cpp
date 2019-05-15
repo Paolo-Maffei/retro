@@ -15,8 +15,6 @@
 #include <jee.h>
 #include <string.h>
 
-#define SLOW 0  // 0 or 40, for 4 or 36 MHz clocks (flash demo assumes 4 MHz)
-
 UartBufDev< PinA<9>, PinA<10> > console;
 UartBufDev< PinA<2>, PinA<3> > serial;
 
@@ -32,6 +30,10 @@ PinB<0> XIN;
 PinB<2> ZDA;
 PinB<4> ZCL;
 PinB<8> RST;
+
+#define SLOW 0  // 0 or 40, for 4 or 36 MHz clocks (flash demo assumes 4 MHz)
+
+#include <zdi-util.h>
 
 // see embello/explore/1608-forth/ezr/asm/hello.asm
 const uint8_t hello [] = {
@@ -74,8 +76,6 @@ void ezInit () {
     timer.pwm(1);
 #endif
 }
-
-#include <zdi-util.h>
 
 int main() {
     console.init();
