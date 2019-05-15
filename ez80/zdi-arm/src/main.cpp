@@ -53,12 +53,19 @@ const uint8_t flash [] = {
     0x01, 0xED, 0x79, 0x18, 0xFE, 
 };
 
-void ezInit () {
-    // initialise all the main control pins
-    RST = 1; ZCL = 1; ZDA = 0;
-    RST.mode(Pinmode::out_od);
-    ZCL.mode(Pinmode::out); // XXX out_50mhz
-    ZDA.mode(Pinmode::out);
+int main() {
+    console.init();
+    console.baud(115200, fullSpeedClock());
+    led.mode(Pinmode::out);
+    wait_ms(500);
+    printf("\n---\n");
+
+    serial.init();
+#if SLOW
+    serial.baud(9600, 72000000/2);
+#else
+    serial.baud(9600 * 36/4, 72000000/2);
+#endif
 
     // disable JTAG in AFIO-MAPR to release PB3, PB4, and PA15
     // (looks like this has to be done *after* some GPIO mode inits)
@@ -75,24 +82,12 @@ void ezInit () {
     timer.init(2);
     timer.pwm(1);
 #endif
-}
 
-int main() {
-    console.init();
-    console.baud(115200, fullSpeedClock());
-    led.mode(Pinmode::out);
-    wait_ms(500);
-    printf("\n---\n");
-
-    serial.init();
-#if SLOW
-    serial.baud(9600, 72000000/2);
-#else
-    serial.baud(9600 * 36/4, 72000000/2);
-#endif
-
-    ezInit();
-    ezReset(); // TODO should not be needed (maybe due to JTAG on power-up?)
+    // initialise all the main control pins
+    RST = 1; ZCL = 1; ZDA = 0;
+    RST.mode(Pinmode::out_od);
+    ZCL.mode(Pinmode::out); // XXX out_50mhz
+    ZDA.mode(Pinmode::out);
 
     printf("v%02x", zdiIn(1));
     printf(".%02x", zdiIn(0));
