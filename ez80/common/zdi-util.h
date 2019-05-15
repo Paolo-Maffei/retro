@@ -1,9 +1,11 @@
 // ZDI access and utility code
 
 void ezReset () {
-    RST = 0;
+    RST = 1;
     ZCL = 1; // p.257
     ZDA = 0; // p.243
+    wait_ms(2);
+    RST = 0;
     wait_ms(2);
     RST = 1;
 }

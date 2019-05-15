@@ -57,8 +57,8 @@ int main() {
     console.init();
     console.baud(115200, fullSpeedClock());
     led.mode(Pinmode::out);
-    wait_ms(500);
-    printf("\n---\n");
+    wait_ms(100);
+    printf("\n");
 
     serial.init();
 #if SLOW
@@ -88,10 +88,6 @@ int main() {
     RST.mode(Pinmode::out_od);
     ZCL.mode(Pinmode::out); // XXX out_50mhz
     ZDA.mode(Pinmode::out);
-
-    printf("v%02x", zdiIn(1));
-    printf(".%02x", zdiIn(0));
-    printf(".%02x\n", zdiIn(2));
 
     while (true) {
         uint8_t stat = zdiIn(3);

@@ -1,5 +1,10 @@
 // ZDI commands, used from both ARM and ESP builds
 
+    case 'v': // show chip version
+        printf("%02x", zdiIn(1));
+        printf(".%02x", zdiIn(0));
+        printf(".%02x\n", zdiIn(2));
+        break;
     case 'i': // initialise ZDI pins
         RST = 1; RST.mode(Pinmode::out);
         ZCL = 1; ZCL.mode(Pinmode::out);
@@ -20,7 +25,8 @@
         break;
     case 'R': // reset
         zdiOut(0x11, 0x80);
-        ZCL = 1;
+        ZCL = 1; // enable ZDI
+        ZDA = 0; // start in break mode
         break;
     case 'H': // hardware reset
         ezReset();
