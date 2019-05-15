@@ -21,7 +21,7 @@ int printf(const char* fmt, ...) {
     return 0;
 }
 
-SpiGpio< PinD<2>, PinC<8>, PinC<12>, PinC<11> > spi;
+SpiGpio< PinA<7>, PinA<6>, PinA<5>, PinA<4> > spi;
 SdCard< decltype(spi) > sd;
 FatFS< decltype(sd) > fat;
 //FileMap< decltype(fat), 9 > DiskMap;
