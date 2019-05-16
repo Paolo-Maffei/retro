@@ -24,7 +24,6 @@ int printf(const char* fmt, ...) {
 SpiGpio< PinA<7>, PinA<6>, PinA<5>, PinA<4> > spi;
 SdCard< decltype(spi) > sd;
 FatFS< decltype(sd) > fat;
-//FileMap< decltype(fat), 9 > DiskMap;
 
 PinA<1> led;
 Timer<3> timer;
@@ -131,6 +130,53 @@ void listSdFiles () {
     }
 }
 
+void diskSetup () {
+    printf("<%d>", sd.sdhc);
+    fat.init();
+
+    printf("\n");
+    listSdFiles();
+}
+
+void ramDisk () {
+    FileMap< decltype(fat), 9 > file (fat);
+    int len = file.open("DISK    IMG");
+    printf("<%d>", len);
+
+    zCmd(0x08); // set ADL
+    uint8_t buf [512];
+    for (int pos = 0; pos < len; pos += 512) {
+        if (!file.ioSect(true, pos/512, buf))
+            printf("? fat map error at %d\n", pos);
+        writeMem(0x3A6000 + pos, buf, sizeof buf);
+    }
+}
+
+void romBoot () {
+    // 2) enter ADL mode to switch to 24-bit addressing
+    zCmd(0x08); // set ADL
+
+    // 3) set MBASE now that we're in ADL mode
+    zIns(0x3E, 0x20); // ld a,20h
+    zIns(0xED, 0x6D); // ld mb,a
+
+    // 4) disable ERAM and move SRAM to BANK
+    zIns(0x26, 0x50);       // ld h,80
+    zIns(0xED, 0x21, 0xB4); // out0 (RAM_CTL),h ; disable ERAM
+    zIns(0x3E, 0x20);       // ld a,20h
+    zIns(0xED, 0x39, 0xB5); // out0 (RAM_BANK),a ; SRAM to BANK
+
+    // 8) load system loader to {BANK,DEST}
+    uint8_t buf [128];
+    readMem(0x3A6080, buf, sizeof buf);
+    writeMem(0x20E380, buf, sizeof buf);
+
+    // 9) switch from ADL mode to Z80 mode and jump to SLOAD address
+    setPC(0x20E380);
+    zCmd(0x09); // reset ADL
+    zdiOut(0x10, 0x00); // continue
+}
+
 int main() {
     // basic console and LED setup
     console.init();
@@ -155,17 +201,16 @@ int main() {
     constexpr uint32_t afio = 0x40010000;
     MMIO32(afio+0x04) |= (2<<24); // disable JTAG, keep SWD enabled
 
-    printf("I"); zdiConfig();    // initialise the clock, ZDI pins, etc
-    printf("Z"); zdiCheck();     // check basic ZDI access
-    printf("C"); controlCheck(); // check status control
-    printf("M"); memoryCheck();  // check internal memory
-    printf("S"); sendCheck();    // check serial send
+    printf("I"); zdiConfig();     // initialise the clock, ZDI pins, etc
+    printf("Z"); zdiCheck();      // check basic ZDI access
+    printf("C"); controlCheck();  // check status control
+    printf("M"); memoryCheck();   // check internal memory
+    printf("S"); sendCheck();     // check serial send
 
-    printf("D"); // SD card
     if (sdOk) {
-        printf("detected, sdhc=%d\n", sd.sdhc);
-        fat.init();
-        listSdFiles();
+        printf("D"); diskSetup(); // prepare SD card access
+        printf("A"); ramDisk();   // load ram disk from SD card
+        printf("B"); romBoot();   // simulate rom bootstrap
     }
 
     printf("\n");
