@@ -1,4 +1,4 @@
-[EZ-Retro](https://docs.jeelabs.org/projects/ezr/) is a simple build based on the eZ80 µC, a 512..2048 KB static RAM chip, and an low-end STM32F103C8 board which I'm calling the "Wide Pill". This area has a number of projects coded in C/C++ with the F103 providing a 36..40 MHz clock, initialising and controlling the eZ80 through two "ZDI" I/O pins, plus a few more pins for reset, serial communication, and optionally SPI.
+[EZ-Retro](https://docs.jeelabs.org/projects/ezr/) is a simple build based on the eZ80 µC, a 512..2048 KB static RAM chip, and a low-end STM32F103C8 board which I'm calling the "Wide Pill". This area has a number of projects coded in C/C++ with the F103 providing a 36..40 MHz clock, initialising and controlling the eZ80 through two "ZDI" I/O pins, plus a few more pins for reset, serial communication, and optionally SPI.
 
 In this folder, in order of development:
 
