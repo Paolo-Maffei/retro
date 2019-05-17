@@ -1,7 +1,6 @@
 // Bootstrap CP/M onto eZ80 via ZDI from Wide Pill.
 //
 // Connections:
-//
 //  PB0 = eZ80 XIN, pin 86
 //  PB2 = eZ80 ZDA, pin 69 (w/ 10 kΩ pull-up)
 //  PB4 = eZ80 ZCL, pin 67 (w/ 10 kΩ pull-up)
