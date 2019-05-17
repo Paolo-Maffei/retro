@@ -45,14 +45,6 @@ const uint8_t hello [] = {
     0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64, 0x21, 0x0A, 0x0D, 0x00,
 };
 
-// see embello/explore/1608-forth/ezr/asm/flash.asm - adjusted for 4 MHz
-const uint8_t flash [] = {
-    0x01, 0xF5, 0x00, 0x3E, 0xB6, 0xED, 0x79, 0x3E, 0x49, 0xED, 0x79, 0x0E, 
-    0xF9, 0x3E, 0x15, 0xED, 0x79, 0x0E, 0xF5, 0x3E, 0xB6, 0xED, 0x79, 0x3E, 
-    0x49, 0xED, 0x79, 0x0E, 0xFA, 0x3E, 0x00, 0xED, 0x79, 0x0E, 0xFF, 0x3E, 
-    0x01, 0xED, 0x79, 0x18, 0xFE, 
-};
-
 void zdiConfig () {
     XIN.mode(Pinmode::alt_out); // XXX alt_out_50mhz
     // generate a 36 MHz signal with 50% duty cycle on PB0, using TIM3
@@ -140,13 +132,13 @@ void diskSetup () {
 
 void ramDisk () {
     FileMap< decltype(fat), 9 > file (fat);
-    int len = file.open("DISK    IMG");
+    int len = file.open("DISK3   IMG");
     printf("<%d>", len);
 
     zCmd(0x08); // set ADL
     uint8_t buf [512];
     for (int pos = 0; pos < len; pos += 512) {
-        if (!file.ioSect(true, pos/512, buf))
+        if (!file.ioSect(false, pos/512, buf))
             printf("? fat map error at %d\n", pos);
         writeMem(0x3A6000 + pos, buf, sizeof buf);
     }
@@ -154,15 +146,15 @@ void ramDisk () {
 
 void romBoot () {
     // 2) enter ADL mode to switch to 24-bit addressing
+    zdiOut(0x10, 0x80); // break
     zCmd(0x08); // set ADL
 
     // 3) set MBASE now that we're in ADL mode
-    zIns(0x3E, 0x20); // ld a,20h
-    zIns(0xED, 0x6D); // ld mb,a
+    setMbase(0x20);
 
     // 4) disable ERAM and move SRAM to BANK
-    zIns(0x26, 0x50);       // ld h,80
-    zIns(0xED, 0x21, 0xB4); // out0 (RAM_CTL),h ; disable ERAM
+    zIns(0x3E, 0x50);       // ld a,80
+    zIns(0xED, 0x39, 0xB4); // out0 (RAM_CTL),a ; disable ERAM
     zIns(0x3E, 0x20);       // ld a,20h
     zIns(0xED, 0x39, 0xB5); // out0 (RAM_BANK),a ; SRAM to BANK
 
@@ -206,6 +198,7 @@ int main() {
     printf("C"); controlCheck();  // check status control
     printf("M"); memoryCheck();   // check internal memory
     printf("S"); sendCheck();     // check serial send
+    printf("S"); sendCheck();     // check serial send
 
     if (sdOk) {
         printf("D"); diskSetup(); // prepare SD card access
@@ -214,33 +207,11 @@ int main() {
     }
 
     printf("\n");
+
     while (true) {
-        uint8_t stat = zdiIn(3);
-        zCmd(0x08); // set ADL
-        printf("s%02x %02x: ", stat, getMbase());
-        if ((stat & 0x10) == 0)
-            zCmd(0x09); // reset ADL
-
-        while (!console.readable()) {
-            if (serial.readable())
-                console.putc(serial.getc());
-        }
-        led.toggle();
-
-        int ch = console.getc();
-        if (ch != '\n')
-            printf("%c\n", ch);
-
-        switch (ch) {
-
-#include <zdi-cmds.h>
-
-            case 'f': writeMem(0xFFE000, flash, sizeof flash); break;
-
-            case '\r': // console.getc();
-            case '\n': printf("\r"); break;
-
-            default: printf("?\n");
-        }
+        if (serial.readable())
+            console.putc(serial.getc());
+        if (console.readable())
+            serial.putc(console.getc());
     }
 }
