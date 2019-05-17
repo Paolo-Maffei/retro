@@ -146,7 +146,6 @@ void ramDisk () {
 
 void romBoot () {
     // 2) enter ADL mode to switch to 24-bit addressing
-    zdiOut(0x10, 0x80); // break
     zCmd(0x08); // set ADL
 
     // 3) set MBASE now that we're in ADL mode
@@ -198,13 +197,13 @@ int main() {
     printf("C"); controlCheck();  // check status control
     printf("M"); memoryCheck();   // check internal memory
     printf("S"); sendCheck();     // check serial send
-    printf("S"); sendCheck();     // check serial send
 
     if (sdOk) {
         printf("D"); diskSetup(); // prepare SD card access
         printf("A"); ramDisk();   // load ram disk from SD card
         printf("B"); romBoot();   // simulate rom bootstrap
-    }
+    } else
+        ezReset(true);
 
     printf("\n");
 
