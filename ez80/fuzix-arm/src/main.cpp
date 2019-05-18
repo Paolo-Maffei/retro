@@ -85,6 +85,8 @@ void ramDisk () {
 }
 
 void romBoot () {
+//printf("a%02x\n", zdiIn(3));
+
     // 2) enter ADL mode to switch to 24-bit addressing
     zCmd(0x08); // set ADL
 
@@ -93,15 +95,25 @@ void romBoot () {
 
     // 4) move SRAM to same bank as MBASE
     zIns(0x3E, 0x00);       // ld a,00h
-    zIns(0xED, 0x39, 0xB5); // out0 (RAM_BANK),a ; SRAM to BANK
+    zIns(0xED, 0x39, 0xB5); // out0 (RAM_BANK),a ; SRAM to 0x00E000
+
+    // 4A) move flash to high memory
+    zIns(0x3E, 0xF0);       // ld a,0F0h
+    zIns(0xED, 0x39, 0xF7); // out0 (FLASH_BANK),a ; FLASH to 0xF00000
 
     // 8) load FUZIX to {0x00,0x0100}
     writeMem(0x000100, fuzix, sizeof fuzix);
+
+//uint32_t xx;
+//readMem(0x000100, &xx, 4);
+//printf("x%08x\n", xx);
 
     // 9) switch from ADL mode to Z80 mode and jump to SLOAD address
     setPC(0x000100);
     zCmd(0x09); // reset ADL
     zdiOut(0x10, 0x00); // continue
+
+//printf("b%02x\n", zdiIn(3));
 }
 
 int main() {
