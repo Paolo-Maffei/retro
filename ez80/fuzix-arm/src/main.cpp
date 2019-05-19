@@ -133,6 +133,7 @@ int main() {
     MMIO32(afio+0x04) |= (2<<24); // disable JTAG, keep SWD enabled
 
     printf("I"); zdiConfig();     // initialise the clock, ZDI pins, etc
+ezReset();
     printf("Z"); zdiCheck();      // check basic ZDI access
     printf("C"); controlCheck();  // check status control
 
