@@ -71,17 +71,28 @@ void diskSetup () {
 }
 
 void ramDisk () {
-    FileMap< decltype(fat), 9 > file (fat);
+    FileMap< decltype(fat), 49 > file (fat);
     int len = file.open("ROOTFS  IMG");
     printf("<%d>", len);
 
     zCmd(0x08); // set ADL
     uint8_t buf [512];
+#if 0
     for (int pos = 0; pos < len; pos += 512) {
         if (!file.ioSect(false, pos/512, buf))
             printf("? fat map error at %d\n", pos);
-        writeMem(0x040000 + pos, buf, sizeof buf);
+        writeMem(0x080000 + pos, buf, sizeof buf);
     }
+#endif
+#if 1
+    readMem(0x080200, buf, sizeof buf);
+    printf("\n");
+    for (int i = 0; i < 64; ++i) {
+        printf(" %02x", buf[i]);
+        if ((i+1) % 16 == 0)
+            printf("\n");
+    }
+#endif
 }
 
 void romBoot () {
@@ -139,9 +150,7 @@ ezReset();
 
     if (sdOk) {
         printf("D"); diskSetup(); // prepare SD card access
-#if 0
         printf("A"); ramDisk();   // load ram disk from SD card
-#endif
         printf("B"); romBoot();   // simulate rom bootstrap
     } else
         ezReset(true);
