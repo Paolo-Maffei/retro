@@ -49,6 +49,8 @@ void zdiConfig () {
     RST.mode(Pinmode::out_od);
     ZCL.mode(Pinmode::out); // XXX out_50mhz
     ZDA.mode(Pinmode::out);
+
+    ezReset(); // seems to be required for robust startup in all situations?
 }
 
 void zdiCheck () {
@@ -82,15 +84,6 @@ void ramDisk () {
         if (!file.ioSect(false, pos/512, buf))
             printf("? fat map error at %d\n", pos);
         writeMem(0x080000 + pos, buf, sizeof buf);
-    }
-#endif
-#if 1
-    readMem(0x080200, buf, sizeof buf);
-    printf("\n");
-    for (int i = 0; i < 64; ++i) {
-        printf(" %02x", buf[i]);
-        if ((i+1) % 16 == 0)
-            printf("\n");
     }
 #endif
 }
@@ -144,7 +137,6 @@ int main() {
     MMIO32(afio+0x04) |= (2<<24); // disable JTAG, keep SWD enabled
 
     printf("I"); zdiConfig();     // initialise the clock, ZDI pins, etc
-ezReset();
     printf("Z"); zdiCheck();      // check basic ZDI access
     printf("C"); controlCheck();  // check status control
 
