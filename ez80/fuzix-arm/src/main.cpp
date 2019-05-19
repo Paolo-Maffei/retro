@@ -139,7 +139,9 @@ ezReset();
 
     if (sdOk) {
         printf("D"); diskSetup(); // prepare SD card access
-// TODO printf("A"); ramDisk();   // load ram disk from SD card
+#if 0
+        printf("A"); ramDisk();   // load ram disk from SD card
+#endif
         printf("B"); romBoot();   // simulate rom bootstrap
     } else
         ezReset(true);
