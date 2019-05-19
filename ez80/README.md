@@ -14,3 +14,4 @@ In this folder, in order of development:
 | `zdi-esp` | Similar to `zdi-arm`, but using an ESP32 WROVER instead of the Wide Pill |
 | `cpm2-arm` | Copy disk image from SD card to RAM, then launch CP/M 2.2 |
 | `run-arm` | Set up ZDI, boot eZ80 from its flash, then switch to pass-through console I/O |
+| `fuzix-arm` | Load FUZIX from embedded data and RAM disk from SD card |
