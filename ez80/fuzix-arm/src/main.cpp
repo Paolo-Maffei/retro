@@ -81,9 +81,9 @@ void ramDisk () {
     int len = file.open("ROOTFS  IMG");
     printf("<%d>", len);
 
+#if 1 // this takes ≈ 10s, can be skipped as long as RAM retains its contents
     zCmd(0x08); // set ADL
     uint8_t buf [512];
-#if 1 // this takes ≈ 10s, can be skipped as long as RAM retains its contents
     for (int pos = 0; pos < len; pos += 512) {
         if (!file.ioSect(false, pos/512, buf))
             printf("? fat map error at %d\n", pos);
