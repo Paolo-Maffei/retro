@@ -50,6 +50,10 @@ void zdiConfig () {
     ZCL.mode(Pinmode::out); // XXX out_50mhz
     ZDA.mode(Pinmode::out);
 
+    // no wait states for external ram (default is 7)
+    zIns(0x3E,0x08);        // ld a,08h
+    zIns(0xED, 0x39, 0xAA); // out0 (0AAh),a
+
     ezReset(); // seems to be required for robust startup in all situations?
 }
 
@@ -79,7 +83,7 @@ void ramDisk () {
 
     zCmd(0x08); // set ADL
     uint8_t buf [512];
-#if 0
+#if 1 // this takes ≈ 10s, can be skipped as long as RAM retains its contents
     for (int pos = 0; pos < len; pos += 512) {
         if (!file.ioSect(false, pos/512, buf))
             printf("? fat map error at %d\n", pos);
