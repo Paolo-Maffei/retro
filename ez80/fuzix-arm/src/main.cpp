@@ -95,7 +95,9 @@ void romBoot () {
     // 3) set MBASE now that we're in ADL mode
     setMbase(0x00);
 
-    // 4) move SRAM to same bank as MBASE
+    // 4) disable ERAM and move SRAM to same bank as MBASE
+    zIns(0x3E, 0x80);       // ld a,80h
+    zIns(0xED, 0x39, 0xB4); // out0 (RAM_BANK),a ; disable ERAM
     zIns(0x3E, 0x00);       // ld a,00h
     zIns(0xED, 0x39, 0xB5); // out0 (RAM_BANK),a ; SRAM to 0x00E000
 
