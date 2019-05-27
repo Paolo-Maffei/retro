@@ -11,6 +11,7 @@ const uint8_t rom [] = {
 #include "zexall.h"
 };
 
+uint8_t mem [1<<16];
 Context context;
 
 void systemCall (Context *ctx, int, uint16_t) {

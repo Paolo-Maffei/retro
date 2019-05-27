@@ -6,8 +6,9 @@ typedef struct {
     uint8_t   done;
 } Context;
 
+extern uint8_t mem [];
+
 inline uint8_t* mapMem (void* cp, uint16_t addr) {
-    static uint8_t mem [1<<16];
     return mem + addr;
 }
 

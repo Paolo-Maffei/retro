@@ -8,6 +8,8 @@ extern "C" {
 #include "macros.h"
 }
 
+uint8_t mem [1<<16];
+
 // xxd -i <hexsave.com >../common-z80/hexsave.h
 const uint8_t ram [] = {
 #include "hexsave.h"
