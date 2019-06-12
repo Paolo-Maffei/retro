@@ -460,7 +460,7 @@ void setup () {
         printf("- launching fuzix.bin\n");
         context.state.pc = origin;
     } else {
-        // emulated room bootstrap, loads first disk sector to 0x0000
+        // emulated rom bootstrap, loads first disk sector to 0x0000
         mappedDisk[0].readBlock(0, mainMem);
 
         // leave a copy of HEXSAVE.COM at 0x0100

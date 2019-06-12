@@ -174,7 +174,7 @@ int main() {
     const uint16_t origin = 0x0100;
 
 #if 0
-    // emulated room bootstrap, loads first disk sector to 0x0000
+    // emulated rom bootstrap, loads first disk sector to 0x0000
     disk.readSector(0, mapMem(&context, 0x0000));
 #else
     printf("booting: ");

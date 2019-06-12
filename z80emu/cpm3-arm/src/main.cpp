@@ -146,7 +146,7 @@ int main() {
             disk.writeSector(26*2 + i, buf);
     }
 
-    // emulated room bootstrap, loads first disk sector to 0x0000
+    // emulated rom bootstrap, loads first disk sector to 0x0000
     disk.readSector(0, mapMem(&context, 0x0000));
 
     // leave a copy of HEXSAVE.COM at 0x0100
