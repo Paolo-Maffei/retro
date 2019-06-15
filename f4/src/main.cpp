@@ -87,9 +87,6 @@ int main() {
     console.baud(115200, fullSpeedClock()/2);
     led.mode(Pinmode::out);
 
-    printf("%d\n", ticks);
-
-    // start emulating
     Z80Reset(&z80state);
     initMemory();
 
