@@ -17,7 +17,7 @@ int printf(const char* fmt, ...) {
 
 PinB<9> led;
 Z80_STATE z80state;
-FlashWear disk;
+FlashWear fdisk;
 
 void systemCall (void* context, int req) {
     Z80_STATE* state = &z80state;
@@ -51,9 +51,9 @@ void systemCall (void* context, int req) {
                 for (int i = 0; i < cnt; ++i) {
                     void* mem = mapMem(context, HL + 128*i);
                     if (out)
-                        disk.writeSector(pos + i, mem);
+                        fdisk.writeSector(pos + i, mem);
                     else
-                        disk.readSector(pos + i, mem);
+                        fdisk.readSector(pos + i, mem);
                 }
             }
             A = 0;
@@ -101,29 +101,28 @@ uint16_t initMemory (uint8_t* mem) {
 
     return 0x100;
 #else
-    if (disk.valid())
-        disk.init();
+    if (fdisk.valid())
+        fdisk.init(false);  // setup, keeping current data
     else {
-        disk.init(true);
+        fdisk.init(true);    // initialise fresh disk map
         
         static const uint8_t rom_cpm [] = {
         #include "rom-cpm.h"
         };
 
         // write boot loader and system to tracks 0..1
-        int pos = 0;
         for (uint32_t off = 0; off < sizeof rom_cpm; off += 128)
-            disk.writeSector(pos++, rom_cpm + off);
+            fdisk.writeSector(off/128, rom_cpm + off);
 
         // write 16 empty directory sectors to track 2
         uint8_t buf [128];
         memset(buf, 0xE5, sizeof buf);
         for (int i = 0; i < 16; ++i)
-            disk.writeSector(26*2 + i, buf);
+            fdisk.writeSector(26*2 + i, buf);
     }
 
     // emulated rom bootstrap, loads first disk sector to 0x0000
-    disk.readSector(0, mem);
+    fdisk.readSector(0, mem);
 
     static const uint8_t rom [] = {
     #include "hexsave.h"
