@@ -91,7 +91,7 @@ int main() {
     initMemory();
 
     while (true) {
-        Z80Emulate(&z80state, 5000000, 0);
+        Z80Emulate(&z80state, 10000000, 0);
         led.toggle();
     }
 }
