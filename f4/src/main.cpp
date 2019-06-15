@@ -1,9 +1,3 @@
-// Simple blink test to verify that the toochain and board are working properly.
-// The LED blinks (briefly on), and the serial port prints elapsed milliseconds.
-// This also verifies that interrupts work and that the vector is placed in RAM.
-// Furthermore, it generates periodic SysTicks and makes the CPU run at 168 MHz.
-// Not bad for a couple lines of C++ code, eh? For details see the JeeH library.
-
 #include <jee.h>
 
 UartBufDev< PinA<9>, PinA<10> > console;
@@ -25,6 +19,6 @@ int main() {
         led = 0;
         wait_ms(100);
         led = 1;
-        wait_ms(400);
+        wait_ms(900);
     }
 }
