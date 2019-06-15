@@ -106,14 +106,14 @@ uint16_t initMemory (uint8_t* mem) {
     else {
         disk.init(true);
         
-        static const uint8_t rom [] = {
+        static const uint8_t rom_cpm [] = {
         #include "rom-cpm.h"
         };
 
         // write boot loader and system to tracks 0..1
         int pos = 0;
-        for (uint32_t off = 0; off < sizeof rom; off += 128)
-            disk.writeSector(pos++, rom + off);
+        for (uint32_t off = 0; off < sizeof rom_cpm; off += 128)
+            disk.writeSector(pos++, rom_cpm + off);
 
         // write 16 empty directory sectors to track 2
         uint8_t buf [128];
@@ -124,6 +124,13 @@ uint16_t initMemory (uint8_t* mem) {
 
     // emulated rom bootstrap, loads first disk sector to 0x0000
     disk.readSector(0, mem);
+
+    static const uint8_t rom [] = {
+    #include "hexsave.h"
+    };
+
+    printf("hexsave: %d bytes @ 0x0100\n", sizeof rom);
+    memcpy(mem + 0x100, rom, sizeof rom);
 
     return 0x0000;
 #endif
