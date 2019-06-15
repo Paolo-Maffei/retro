@@ -1,5 +1,6 @@
 #include <jee.h>
 #include <string.h>
+#include "flashwear.h"
 
 extern "C" {
 #include "context.h"
@@ -15,8 +16,8 @@ int printf(const char* fmt, ...) {
 }
 
 PinB<9> led;
-
 Z80_STATE z80state;
+FlashWear disk;
 
 void systemCall (void* context, int req) {
     Z80_STATE* state = &z80state;
@@ -34,6 +35,28 @@ void systemCall (void* context, int req) {
         case 3: // constr
             for (uint16_t i = DE; *mapMem(context, i) != 0; i++)
                 console.putc(*mapMem(context, i));
+            break;
+        case 4: // read/write
+            //  ld a,(sekdrv)
+            //  ld b,1 ; +128 for write
+            //  ld de,(seksat)
+            //  ld hl,(dmaadr)
+            //  in a,(4)
+            //  ret
+            {
+                bool out = (B & 0x80) != 0;
+                uint8_t sec = DE, trk = DE >> 8, dsk = A, cnt = B & 0x7F;
+                uint32_t pos = 2048*dsk + 26*trk + sec;  // no skewing
+
+                for (int i = 0; i < cnt; ++i) {
+                    void* mem = mapMem(context, HL + 128*i);
+                    if (out)
+                        disk.writeSector(pos + i, mem);
+                    else
+                        disk.readSector(pos + i, mem);
+                }
+            }
+            A = 0;
             break;
 #if ZEXALL
         case 10:
@@ -56,15 +79,13 @@ void systemCall (void* context, int req) {
     }
 }
 
-void initMemory () {
+uint16_t initMemory (uint8_t* mem) {
 #if ZEXALL
     static const uint8_t rom [] = {
     #include "zexall.h"
     };
 
-    printf("load ZEXALL: %d bytes @ 0x0100\n", sizeof rom);
-
-    uint8_t *mem = mapMem(0, 0);
+    printf("zexall: %d bytes @ 0x0100\n", sizeof rom);
     memcpy(mem + 0x100, rom, sizeof rom);
 
     // Patch the memory of the program. Reset at 0x0000 is trapped by an
@@ -78,7 +99,33 @@ void initMemory () {
     mem[6] = 0x0A;
     mem[7] = 0xC9;       // RET
 
-    z80state.pc = 0x100;
+    return 0x100;
+#else
+    if (disk.valid())
+        disk.init();
+    else {
+        disk.init(true);
+        
+        static const uint8_t rom [] = {
+        #include "rom-cpm.h"
+        };
+
+        // write boot loader and system to tracks 0..1
+        int pos = 0;
+        for (uint32_t off = 0; off < sizeof rom; off += 128)
+            disk.writeSector(pos++, rom + off);
+
+        // write 16 empty directory sectors to track 2
+        uint8_t buf [128];
+        memset(buf, 0xE5, sizeof buf);
+        for (int i = 0; i < 16; ++i)
+            disk.writeSector(26*2 + i, buf);
+    }
+
+    // emulated rom bootstrap, loads first disk sector to 0x0000
+    disk.readSector(0, mem);
+
+    return 0x0000;
 #endif
 }
 
@@ -88,7 +135,7 @@ int main() {
     led.mode(Pinmode::out);
 
     Z80Reset(&z80state);
-    initMemory();
+    z80state.pc = initMemory(mapMem(0, 0));
 
     while (true) {
         Z80Emulate(&z80state, 10000000, 0);
