@@ -85,7 +85,7 @@ uint16_t initMemory (uint8_t* mem) {
     #include "zexall.h"
     };
 
-    printf("zexall: %d bytes @ 0x0100\n", sizeof rom);
+    printf("\n[zexall: %d bytes @ 0x0100]\n", sizeof rom);
     memcpy(mem + 0x100, rom, sizeof rom);
 
     // Patch the memory of the program. Reset at 0x0000 is trapped by an
@@ -128,7 +128,7 @@ uint16_t initMemory (uint8_t* mem) {
     #include "hexsave.h"
     };
 
-    printf("hexsave: %d bytes @ 0x0100\n", sizeof rom);
+    printf("\n[hexsave: %d bytes @ 0x0100]", sizeof rom);
     memcpy(mem + 0x100, rom, sizeof rom);
 
     return 0x0000;
