@@ -23,7 +23,11 @@ PinE<0> led;
 
 int main() {
     console.init();
-    enableSysTick();
+#if STM32F1
+    console.baud(115200, fullSpeedClock());
+#elif STM32F4
+    console.baud(115200, fullSpeedClock()/2);
+#endif
     led.mode(Pinmode::out);
 
     while (true) {
