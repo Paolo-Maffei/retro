@@ -24,6 +24,7 @@ FlashWear fdisk;
 // see schematic: STM32F103/407VET6mini (circle)
 SpiGpio< PinD<2>, PinC<8>, PinC<12>, PinC<11> > spi;
 SdCard< decltype(spi) > sdisk;
+FatFS< decltype(sdisk) > fat;
 
 void systemCall (void* context, int req) {
     Z80_STATE* state = &z80state;
@@ -110,7 +111,29 @@ void systemCall (void* context, int req) {
     }
 }
 
-uint16_t initMemory (uint8_t* mem) {
+void listSdFiles () {
+    for (int i = 0; i < fat.rmax; ++i) {
+        int off = (i*32) % 512;
+        if (off == 0)
+            sdisk.read512(fat.rdir + i/16, fat.buf);
+        int length = *(int32_t*) (fat.buf+off+28);
+        if (length >= 0 &&
+                '!' < fat.buf[off] && fat.buf[off] < '~' &&
+                fat.buf[off+5] != '~' && fat.buf[off+6] != '~') {
+            uint8_t attr = fat.buf[off+11];
+            printf("   %s\t", attr & 8 ? "vol:" : attr & 16 ? "dir:" : "");
+            for (int j = 0; j < 11; ++j) {
+                int c = fat.buf[off+j];
+                if (j == 8)
+                    printf(".");
+                printf("%c", c);
+            }
+            printf(" %7d b\n", length);
+        }
+    }
+}
+
+uint16_t initMemory (bool hasSd, uint8_t* mem) {
 #if ZEXALL
     static const uint8_t rom [] = {
     #include "zexall.h"
@@ -155,11 +178,24 @@ uint16_t initMemory (uint8_t* mem) {
     // emulated rom bootstrap, loads first disk sector to 0x0000
     fdisk.readSector(0, mem);
 
+    // if there's a boot command, load it instead of the default "hexsave"
+    if (hasSd) {
+        // TODO this api sucks, should not need to mention "fat" twice
+        FileMap< decltype(fat), 9 > file (fat);
+        int len = file.open("BOOT    COM");
+        if (len > 0) {
+            printf("[sd boot] save %d boot.com\n", (len+255)/256);
+            for (int i = 0; i < len; i += 512)
+                file.ioSect(false, i/512, mem + 0x0100 + i);
+            return 0x0000;
+        }
+    }
+
     static const uint8_t rom [] = {
     #include "hexsave.h"
     };
 
-    printf("\n[hexsave] %d bytes @ 0x0100", sizeof rom);
+    printf("\n[hexsave] %d bytes @ 0x0100\n", sizeof rom);
     memcpy(mem + 0x100, rom, sizeof rom);
 
     return 0x0000;
@@ -174,15 +210,19 @@ int main() {
     wait_ms(500);
     printf("\n[sd card] ");
     spi.init();
-    if (sdisk.init())
-        printf("detected, hd=%d", sdisk.sdhc);
+    bool sdOk = sdisk.init();
+    if (sdOk) {
+        printf("detected, hd=%d\n", sdisk.sdhc);
+        fat.init();
+        listSdFiles();
+    }
 
     // switch to full speed, now that the SD card has been inited
     wait_ms(10); // let serial output drain
     console.baud(115200, fullSpeedClock()/2);
 
     Z80Reset(&z80state);
-    z80state.pc = initMemory(mapMem(0, 0));
+    z80state.pc = initMemory(sdOk, mapMem(0, 0));
 
     while (true) {
         Z80Emulate(&z80state, 10000000, 0);
