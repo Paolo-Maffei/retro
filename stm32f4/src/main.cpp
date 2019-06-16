@@ -1,6 +1,7 @@
 #include <jee.h>
 #include <string.h>
 #include "flashwear.h"
+#include <jee/spi-sdcard.h>
 
 extern "C" {
 #include "context.h"
@@ -19,6 +20,11 @@ PinB<9> led;
 Z80_STATE z80state;
 FlashWear fdisk;
 
+// all pins connected, i.e. could also use SDIO
+// see schematic: STM32F103/407VET6mini (circle)
+SpiGpio< PinD<2>, PinC<8>, PinC<12>, PinC<11> > spi;
+SdCard< decltype(spi) > sdisk;
+
 void systemCall (void* context, int req) {
     Z80_STATE* state = &z80state;
     //printf("req %d A %d\n", req, A);
@@ -36,7 +42,7 @@ void systemCall (void* context, int req) {
             for (uint16_t i = DE; *mapMem(context, i) != 0; i++)
                 console.putc(*mapMem(context, i));
             break;
-        case 4: // read/write
+        case 4: // read/write flash disk
             //  ld a,(sekdrv)
             //  ld b,1 ; +128 for write
             //  ld de,(seksat)
@@ -54,6 +60,31 @@ void systemCall (void* context, int req) {
                         fdisk.writeSector(pos + i, mem);
                     else
                         fdisk.readSector(pos + i, mem);
+                }
+            }
+            A = 0;
+            break;
+        case 5: // read/write sd card
+            //  ld a,(sekdrv)
+            //  ld b,1 ; +128 for write
+            //  ld de,(seksat)
+            //  ld hl,(dmaadr)
+            //  in a,(4)
+            //  ret
+            //printf("AF %04X BC %04X DE %04X HL %04X\n", AF, BC, DE, HL);
+            {
+                bool out = (B & 0x80) != 0;
+                uint8_t cnt = B & 0x7F;
+                uint32_t pos = 16384*A + DE + 2048;  // no skewing
+
+                for (int i = 0; i < cnt; ++i) {
+                    void* mem = mapMem(&context, HL + 512*i);
+                    //printf("SD%d wr %d mem %d:0x%x pos %d\n",
+                    //        A, out, context.bank, HL + 512*i, pos + i);
+                    if (out)
+                        sdisk.write512(pos + i, mem);
+                    else
+                        sdisk.read512(pos + i, mem);
                 }
             }
             A = 0;
@@ -85,7 +116,7 @@ uint16_t initMemory (uint8_t* mem) {
     #include "zexall.h"
     };
 
-    printf("\n[zexall: %d bytes @ 0x0100]\n", sizeof rom);
+    printf("\n[zexall] %d bytes @ 0x0100\n", sizeof rom);
     memcpy(mem + 0x100, rom, sizeof rom);
 
     // Patch the memory of the program. Reset at 0x0000 is trapped by an
@@ -128,7 +159,7 @@ uint16_t initMemory (uint8_t* mem) {
     #include "hexsave.h"
     };
 
-    printf("\n[hexsave: %d bytes @ 0x0100]", sizeof rom);
+    printf("\n[hexsave] %d bytes @ 0x0100", sizeof rom);
     memcpy(mem + 0x100, rom, sizeof rom);
 
     return 0x0000;
@@ -137,8 +168,18 @@ uint16_t initMemory (uint8_t* mem) {
 
 int main() {
     console.init();
-    console.baud(115200, fullSpeedClock()/2);
+    enableSysTick();
     led.mode(Pinmode::out);
+
+    wait_ms(500);
+    printf("\n[sd card] ");
+    spi.init();
+    if (sdisk.init())
+        printf("detected, hd=%d", sdisk.sdhc);
+
+    // switch to full speed, now that the SD card has been inited
+    wait_ms(10); // let serial output drain
+    console.baud(115200, fullSpeedClock()/2);
 
     Z80Reset(&z80state);
     z80state.pc = initMemory(mapMem(0, 0));
