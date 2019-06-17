@@ -18,50 +18,6 @@ static void cleanup (void) {
     tcsetattr(0, TCSANOW, &tiosSaved);
 }
 
-void consoleOut (char c) {
-    static char lastc = 0;
-    if (c == '\n' && lastc != '\r')
-        write(0, "\r", 1);
-    write(0, &c, 1);
-    lastc = c;
-}
-
-void consoleOuts (const char* s) {
-    while (*s)
-        consoleOut(*s++);
-}
-
-int consoleHit (void) {
-    if (batchMode)
-        return 1;
-    int i = 0;
-    if (!done) {
-        usleep(10);
-        ioctl(0, FIONREAD, &i);
-    }
-    return i > 0;
-}
-
-int consoleWait (void) {
-    int c = 0;
-    if (batchMode)
-        c = getchar();
-    else if (read(0, &c, 1) < 0)
-        c = -1;
-    //if (c < 0 || c == 0x04) {
-    if (c < 0) {
-        c = 0;
-        done = 1;
-    }
-    if (c == '\n')
-        c = '\r';
-    return c;
-}
-
-int consoleIn (void) {
-    return consoleHit() ? consoleWait() : 0;
-}
-
 static int argCnt;
 static const char* const* argVec;
 
@@ -115,30 +71,52 @@ int main (int argc, const char* argv[]) {
 
 struct Console {
     void init () {
-        tcgetattr(0, &tiosSaved);
-        atexit(cleanup);
+        if (isatty(0)) {
+            tcgetattr(0, &tiosSaved);
+            atexit(cleanup);
 
-        struct termios tios = tiosSaved;
-        cfmakeraw(&tios);
-        tcsetattr(0, TCSANOW, &tios);
+            struct termios tios = tiosSaved;
+            cfmakeraw(&tios);
+            tcsetattr(0, TCSANOW, &tios);
+        } else
+            batchMode = 1;
     }
 
     bool writable () {
         return true;
     }
     void putc (int c) {
-        consoleOut(c);
+        static char lastc = 0;
+        if (c == '\n' && lastc != '\r')
+            write(0, "\r", 1);
+        write(0, &c, 1);
+        lastc = c;
     }
     bool readable () {
-        return consoleHit();
+        if (batchMode)
+            return 1;
+        int i = 0;
+        if (!done) {
+            usleep(10);
+            ioctl(0, FIONREAD, &i);
+        }
+        return i > 0;
     }
     int getc () {
-        int c = consoleWait();
-        // not same as interrupt, only works while input is being polled
-        if (c == 0x1C) { // ctrl-backslash
-            consoleOut('\n');
-            exit(1);
+        int c = 0;
+        if (batchMode)
+            c = getchar();
+        else if (read(0, &c, 1) < 0)
+            c = -1;
+        if (c < 0) {
+            c = 0;
+            done = 1;
         }
+        if (c == '\n')
+            c = '\r';
+        // not same as interrupt, only works while input is being polled
+        if (c == 0x1C) // ctrl-backslash
+            exit(1);
         return c;
     }
 };
