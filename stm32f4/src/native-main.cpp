@@ -1,6 +1,4 @@
 #include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
 
 #include "native.h"
 
@@ -11,41 +9,10 @@ extern "C" {
 }
 
 uint8_t mainMem [64*1024];
-
-struct Console {
-    bool readable () {
-        return consoleHit();
-    }
-    int getc () {
-        int c = consoleWait();
-        // not same as interrupt, only works while input is being polled
-        if (c == 0x1C) { // ctrl-backslash
-            consoleOut('\n');
-            exit(1);
-        }
-        return c;
-    }
-    void putc (int c) {
-        consoleOut(c);
-    }
-};
-
-class FlashWear {
-    uint8_t fmem [256*1024];
-public:
-    bool valid () { return false; }
-    int init (bool =false) { return 0; }
-    void readSector (int pos, void* buf) {
-        memcpy(buf, fmem + 128*pos, 128);
-    }
-    void writeSector (int pos, void const* buf) {
-        memcpy(fmem + 128*pos, buf, 128);
-    }
-};
+Console console;
 
 Z80_STATE z80state;
 FlashWear fdisk;
-Console console;
 
 void systemCall (void* context, int req) {
     Z80_STATE* state = &z80state;

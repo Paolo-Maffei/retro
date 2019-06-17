@@ -112,3 +112,56 @@ int main (int argc, const char* argv[]) {
     return 0;
 }
 #endif
+
+struct Console {
+    bool writable () {
+        return true;
+    }
+    void putc (int c) {
+        consoleOut(c);
+    }
+    bool readable () {
+        return consoleHit();
+    }
+    int getc () {
+        int c = consoleWait();
+        // not same as interrupt, only works while input is being polled
+        if (c == 0x1C) { // ctrl-backslash
+            consoleOut('\n');
+            exit(1);
+        }
+        return c;
+    }
+};
+
+struct FlashWear {
+    const char* filename = "flashmem.dat";
+    FILE* fp = 0;
+
+    bool valid () {
+        FILE* f = fopen(filename, "r+");
+        if (f != 0)
+            fclose(f);
+        return f != 0;
+    }
+    int init (bool erase =false) {
+        if (erase) {
+            printf("initialising internal flash\r\n");
+            FILE* f = fopen(filename, "w+");
+            fseek(f, 256*1024-1, SEEK_SET);
+            fputc(0, f);
+            fclose(f);
+        }
+        fp = fopen(filename, "r+");
+        return 0;
+    }
+    void readSector (int pos, void* buf) {
+        fseek(fp, 128*pos, SEEK_SET);
+        fread(buf, 128, 1, fp);
+    }
+    void writeSector (int pos, void const* buf) {
+        fseek(fp, 128*pos, SEEK_SET);
+        fwrite(buf, 128, 1, fp);
+        fflush(fp);
+    }
+};
