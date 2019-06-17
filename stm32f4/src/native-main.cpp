@@ -38,6 +38,11 @@ void systemCall (void *context, int req) {
             break;
         case 1: // conin
             A = consoleWait();
+            // not same as interrupt, only works while input is being polled
+            if (A == 0x1C) { // ctrl-backslash
+                consoleOut('\n');
+                exit(1);
+            }
             break;
         case 2: // conout
             consoleOut(C);
