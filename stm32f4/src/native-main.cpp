@@ -107,12 +107,7 @@ uint16_t initMemory (uint8_t* mem) {
 }
 
 int main() {
-    tcgetattr(0, &tiosSaved);
-    atexit(cleanup);
-
-    struct termios tios = tiosSaved;
-    cfmakeraw(&tios);
-    tcsetattr(0, TCSANOW, &tios);
+    console.init();
 
     Z80Reset(&z80state);
     z80state.pc = initMemory(mapMem(0, 0));

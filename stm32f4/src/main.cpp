@@ -113,28 +113,6 @@ void systemCall (void* context, int req) {
     }
 }
 
-void listSdFiles () {
-    for (int i = 0; i < fat.rmax; ++i) {
-        int off = (i*32) % 512;
-        if (off == 0)
-            sdisk.read512(fat.rdir + i/16, fat.buf);
-        int length = *(int32_t*) (fat.buf+off+28);
-        if (length >= 0 &&
-                '!' < fat.buf[off] && fat.buf[off] < '~' &&
-                fat.buf[off+5] != '~' && fat.buf[off+6] != '~') {
-            uint8_t attr = fat.buf[off+11];
-            printf("   %s\t", attr & 8 ? "vol:" : attr & 16 ? "dir:" : "");
-            for (int j = 0; j < 11; ++j) {
-                int c = fat.buf[off+j];
-                if (j == 8)
-                    printf(".");
-                printf("%c", c);
-            }
-            printf(" %7d b\n", length);
-        }
-    }
-}
-
 uint16_t initMemory (uint8_t* mem) {
 #if ZEXALL
     static const uint8_t rom [] = {
@@ -213,7 +191,6 @@ int main() {
     if (sdisk.init()) {
         printf("detected, hd=%d\n", sdisk.sdhc);
         fat.init();
-        listSdFiles();
     }
 
     // switch to full speed, now that the SD card has been inited

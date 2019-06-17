@@ -114,6 +114,15 @@ int main (int argc, const char* argv[]) {
 #endif
 
 struct Console {
+    void init () {
+        tcgetattr(0, &tiosSaved);
+        atexit(cleanup);
+
+        struct termios tios = tiosSaved;
+        cfmakeraw(&tios);
+        tcsetattr(0, TCSANOW, &tios);
+    }
+
     bool writable () {
         return true;
     }
