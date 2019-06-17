@@ -1,14 +1,26 @@
 #include <string.h>
 
-#include <jee.h>
-#include "flashwear.h"
-#include <jee/spi-sdcard.h>
-
 extern "C" {
 #include "context.h"
 #include "z80emu.h"
 #include "macros.h"
 }
+
+// NATIVE is a build for MacOS/Linux, with all the embedded stuff stubbed out
+// this relies on platformio's LDF "chain+" evaluation to avoid compiling JeeH
+#ifdef NATIVE
+
+#include "native.h"
+
+uint8_t mainMem [64*1024];
+Console console;
+DummyGPIO led;
+
+#else // NATIVE
+
+#include <jee.h>
+#include <jee/spi-sdcard.h>
+#include "flashwear.h"
 
 UartBufDev< PinA<9>, PinA<10> > console;
 
@@ -24,6 +36,8 @@ PinB<9> led;
 SpiGpio< PinD<2>, PinC<8>, PinC<12>, PinC<11> > spi;
 SdCard< decltype(spi) > sdisk;
 FatFS< decltype(sdisk) > fat;
+
+#endif // NATIVE
 
 Z80_STATE z80state;
 FlashWear fdisk;
@@ -67,6 +81,7 @@ void systemCall (void* context, int req) {
             }
             A = 0;
             break;
+#if NOTYET
         case 5: // read/write sd card
             //  ld a,(sekdrv)
             //  ld b,1 ; +128 for write
@@ -92,6 +107,7 @@ void systemCall (void* context, int req) {
             }
             A = 0;
             break;
+#endif
 #if ZEXALL
         case 10:
             // emulate CP/M bdos calls from 0x0005, reg C functions 2 and 9
@@ -158,6 +174,7 @@ uint16_t initMemory (uint8_t* mem) {
     // emulated rom bootstrap, loads first disk sector to 0x0000
     fdisk.readSector(0, mem);
 
+#if !NATIVE
     // if there's a boot command, load it instead of the default "hexsave"
     // TODO this api sucks, should not need to mention "fat" twice
     FileMap< decltype(fat), 9 > file (fat);
@@ -168,12 +185,13 @@ uint16_t initMemory (uint8_t* mem) {
             file.ioSect(false, i/512, mem + 0x0100 + i);
         return 0x0000;
     }
+#endif
 
     static const uint8_t rom [] = {
     #include "hexsave.h"
     };
 
-    printf("\n[hexsave] %d bytes @ 0x0100\n", sizeof rom);
+    printf("\n[hexsave] %d bytes @ 0x0100\n", (int) sizeof rom);
     memcpy(mem + 0x100, rom, sizeof rom);
 
     return 0x0000;
@@ -182,6 +200,8 @@ uint16_t initMemory (uint8_t* mem) {
 
 int main() {
     console.init();
+
+#if !NATIVE
     enableSysTick();
     led.mode(Pinmode::out);
 
@@ -196,6 +216,7 @@ int main() {
     // switch to full speed, now that the SD card has been inited
     wait_ms(10); // let serial output drain
     console.baud(115200, fullSpeedClock()/2);
+#endif
 
     Z80Reset(&z80state);
     z80state.pc = initMemory(mapMem(0, 0));

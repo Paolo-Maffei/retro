@@ -174,3 +174,7 @@ struct FlashWear {
         fflush(fp);
     }
 };
+
+struct DummyGPIO {
+    void toggle () {}
+};
