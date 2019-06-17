@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "console-posix.h"
+#include "native.h"
 
 extern "C" {
 #include "context.h"
@@ -12,9 +12,25 @@ extern "C" {
 
 uint8_t mainMem [64*1024];
 
-Z80_STATE z80state;
+struct Console {
+    bool readable () {
+        return consoleHit();
+    }
+    int getc () {
+        int c = consoleWait();
+        // not same as interrupt, only works while input is being polled
+        if (c == 0x1C) { // ctrl-backslash
+            consoleOut('\n');
+            exit(1);
+        }
+        return c;
+    }
+    void putc (int c) {
+        consoleOut(c);
+    }
+};
 
-class DummyFlash {
+class FlashWear {
     uint8_t fmem [256*1024];
 public:
     bool valid () { return false; }
@@ -27,29 +43,26 @@ public:
     }
 };
 
-DummyFlash fdisk;
+Z80_STATE z80state;
+FlashWear fdisk;
+Console console;
 
-void systemCall (void *context, int req) {
+void systemCall (void* context, int req) {
     Z80_STATE* state = &z80state;
     //printf("req %d A %d\n", req, A);
     switch (req) {
         case 0: // coninst
-            A = consoleHit() ? 0xFF : 0x00;
+            A = console.readable() ? 0xFF : 0x00;
             break;
         case 1: // conin
-            A = consoleWait();
-            // not same as interrupt, only works while input is being polled
-            if (A == 0x1C) { // ctrl-backslash
-                consoleOut('\n');
-                exit(1);
-            }
+            A = console.getc();
             break;
         case 2: // conout
-            consoleOut(C);
+            console.putc(C);
             break;
         case 3: // constr
             for (uint16_t i = DE; *mapMem(context, i) != 0; i++)
-                consoleOut(*mapMem(context, i));
+                console.putc(*mapMem(context, i));
             break;
         case 4: // read/write
             //  ld a,(sekdrv)

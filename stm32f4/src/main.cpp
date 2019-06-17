@@ -18,7 +18,6 @@ int printf(const char* fmt, ...) {
 }
 
 PinB<9> led;
-FlashWear fdisk;
 
 // all pins connected, i.e. could also use SDIO
 // see schematic: STM32F103/407VET6mini (circle)
@@ -27,6 +26,7 @@ SdCard< decltype(spi) > sdisk;
 FatFS< decltype(sdisk) > fat;
 
 Z80_STATE z80state;
+FlashWear fdisk;
 
 void systemCall (void* context, int req) {
     Z80_STATE* state = &z80state;
