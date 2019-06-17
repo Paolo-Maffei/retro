@@ -1,5 +1,6 @@
-#include <jee.h>
 #include <string.h>
+
+#include <jee.h>
 #include "flashwear.h"
 #include <jee/spi-sdcard.h>
 
@@ -17,7 +18,6 @@ int printf(const char* fmt, ...) {
 }
 
 PinB<9> led;
-Z80_STATE z80state;
 FlashWear fdisk;
 
 // all pins connected, i.e. could also use SDIO
@@ -25,6 +25,8 @@ FlashWear fdisk;
 SpiGpio< PinD<2>, PinC<8>, PinC<12>, PinC<11> > spi;
 SdCard< decltype(spi) > sdisk;
 FatFS< decltype(sdisk) > fat;
+
+Z80_STATE z80state;
 
 void systemCall (void* context, int req) {
     Z80_STATE* state = &z80state;
@@ -133,7 +135,7 @@ void listSdFiles () {
     }
 }
 
-uint16_t initMemory (bool hasSd, uint8_t* mem) {
+uint16_t initMemory (uint8_t* mem) {
 #if ZEXALL
     static const uint8_t rom [] = {
     #include "zexall.h"
@@ -179,16 +181,14 @@ uint16_t initMemory (bool hasSd, uint8_t* mem) {
     fdisk.readSector(0, mem);
 
     // if there's a boot command, load it instead of the default "hexsave"
-    if (hasSd) {
-        // TODO this api sucks, should not need to mention "fat" twice
-        FileMap< decltype(fat), 9 > file (fat);
-        int len = file.open("BOOT    COM");
-        if (len > 0) {
-            printf("[sd boot] save %d boot.com\n", (len+255)/256);
-            for (int i = 0; i < len; i += 512)
-                file.ioSect(false, i/512, mem + 0x0100 + i);
-            return 0x0000;
-        }
+    // TODO this api sucks, should not need to mention "fat" twice
+    FileMap< decltype(fat), 9 > file (fat);
+    int len = file.open("BOOT    COM");
+    if (len > 0) {
+        printf("[sd boot] save %d boot.com\n", (len+255)/256);
+        for (int i = 0; i < len; i += 512)
+            file.ioSect(false, i/512, mem + 0x0100 + i);
+        return 0x0000;
     }
 
     static const uint8_t rom [] = {
@@ -210,8 +210,7 @@ int main() {
     wait_ms(500);
     printf("\n[sd card] ");
     spi.init();
-    bool sdOk = sdisk.init();
-    if (sdOk) {
+    if (sdisk.init()) {
         printf("detected, hd=%d\n", sdisk.sdhc);
         fat.init();
         listSdFiles();
@@ -222,7 +221,7 @@ int main() {
     console.baud(115200, fullSpeedClock()/2);
 
     Z80Reset(&z80state);
-    z80state.pc = initMemory(sdOk, mapMem(0, 0));
+    z80state.pc = initMemory(mapMem(0, 0));
 
     while (true) {
         Z80Emulate(&z80state, 10000000, 0);
