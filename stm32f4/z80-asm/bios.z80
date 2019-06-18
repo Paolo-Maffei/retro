@@ -36,7 +36,6 @@ wboote: jp wboot    ;  1 Warm boot
 	jp write    ; 14 Write 128 bytes
 	jp listst   ; 15 List status
 	jp sectrn   ; 16 Sector translate
-        jp timeat   ; 17 (p2dos) Time Get/Set
 
 ; Disk Parameter Headers -------------------------------------------------------
 
@@ -147,10 +146,6 @@ sectrn: ld l,c
 	ld h,b
         ret
 
-timeat: ld de,timbuf
-        in a,(5)
-        ret
-
 read:	ld b,1
         jr rdwr
 write:	ld b,1+80h
@@ -178,8 +173,6 @@ dmaadr: ds 2   ; last dma address
 alv0:   ds 32  ; allocation vector 0 (max 255 blocks)
 alv1:   ds 32  ; allocation vector 1 (max 255 blocks)
 alv2:   ds 32  ; allocation vector 2 (max 255 blocks)
-
-timbuf: ds 5
 
 spare:  equ BEND-$
         ds spare                ; BIOS base page and version number
