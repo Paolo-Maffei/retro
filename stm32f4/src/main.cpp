@@ -16,6 +16,9 @@ uint8_t mainMem [64*1024];
 Console console;
 DummyGPIO led;
 
+DiskImage<128> fdisk ("flashmem.img");
+DiskImage<512> sdisk ("sdboot.img");
+
 #else // NATIVE
 
 #include <jee.h>
@@ -30,6 +33,7 @@ int printf(const char* fmt, ...) {
 }
 
 PinB<9> led;
+FlashWear fdisk;
 
 // all pins connected, i.e. could also use SDIO
 // see schematic: STM32F103/407VET6mini (circle)
@@ -40,7 +44,6 @@ FatFS< decltype(sdisk) > fat;
 #endif // NATIVE
 
 Z80_STATE z80state;
-FlashWear fdisk;
 
 void systemCall (void* context, int req) {
     Z80_STATE* state = &z80state;
@@ -59,7 +62,7 @@ void systemCall (void* context, int req) {
             for (uint16_t i = DE; *mapMem(context, i) != 0; i++)
                 console.putc(*mapMem(context, i));
             break;
-        case 4: // read/write flash disk
+        case 4: // read/write flash disk, 128 b/s, 26 s/t (8" SSSD: 77x3.25 KB)
             //  ld a,(sekdrv)
             //  ld b,1 ; +128 for write
             //  ld de,(seksat)
@@ -81,28 +84,26 @@ void systemCall (void* context, int req) {
             }
             A = 0;
             break;
-#if NOTYET
-        case 5: // read/write sd card
+#if NATIVE // TODO update sd's read512/write512 to readSector/writeSector
+        case 5: // read/write sd card, 512 b/s, 18 s/t (1.44M: 160x9 KB)
             //  ld a,(sekdrv)
             //  ld b,1 ; +128 for write
             //  ld de,(seksat)
             //  ld hl,(dmaadr)
-            //  in a,(4)
+            //  in a,(5)
             //  ret
             //printf("AF %04X BC %04X DE %04X HL %04X\n", AF, BC, DE, HL);
             {
                 bool out = (B & 0x80) != 0;
-                uint8_t cnt = B & 0x7F;
-                uint32_t pos = 16384*A + DE + 2048;  // no skewing
+                uint8_t sec = DE, trk = DE >> 8, dsk = A, cnt = B & 0x7F;
+                uint32_t pos = 4096*dsk + 18*trk + sec;  // no skewing
 
                 for (int i = 0; i < cnt; ++i) {
                     void* mem = mapMem(&context, HL + 512*i);
-                    //printf("SD%d wr %d mem %d:0x%x pos %d\n",
-                    //        A, out, context.bank, HL + 512*i, pos + i);
                     if (out)
-                        sdisk.write512(pos + i, mem);
+                        sdisk.writeSector(pos + i, mem);
                     else
-                        sdisk.read512(pos + i, mem);
+                        sdisk.readSector(pos + i, mem);
                 }
             }
             A = 0;
@@ -202,7 +203,9 @@ uint16_t initMemory (uint8_t* mem) {
 int main() {
     console.init();
 
-#if !NATIVE
+#if NATIVE
+    sdisk.init();
+#else
     enableSysTick();
     led.mode(Pinmode::out);
 

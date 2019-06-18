@@ -1,0 +1,3 @@
+z80asm ldrbios/fm
+z80asm cpmldr/m
+l80 cpmldr,ldrbios,ldr/n/e

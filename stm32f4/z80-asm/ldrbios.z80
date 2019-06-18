@@ -1,0 +1,155 @@
+; Minimal CPM Plus Loader BIOS -jcw, 2018-11-16
+
+	cseg
+
+; BIOS jump table --------------------------------------------------------------
+
+	jp boot     ;  0 Initialize
+        jp wboot    ;  1 Warm boot
+	jp conist   ;  2 Console status
+	jp conin    ;  3 Console input
+	jp conout   ;  4 Console OUTput
+	jp list     ;  5 List OUTput
+	jp punch    ;  6 punch OUTput
+	jp reader   ;  7 Reader input
+	jp home     ;  8 Home disk
+	jp seldsk   ;  9 Select disk
+	jp settrk   ; 10 Select track
+	jp setsec   ; 11 Select sector
+	jp setdma   ; 12 Set DMA ADDress
+	jp read     ; 13 Read 128 bytes
+	jp write    ; 14 Write 128 bytes
+	jp listst   ; 15 List status
+	jp sectrn   ; 16 Sector translate
+	jp conost	; return console output status
+	jp auxist	; return aux device input status
+	jp auxost	; return aux device output status
+	jp devtbl	; return address of character i/o table
+	jp devini	; init character i/o devices
+	jp drvtbl	; return address of disk drive table
+	jp multio	; set number of consec. sec. to read/write
+	jp flush	; flush user [de]blocking buffers
+	jp move		; copy memory to memory
+	jp time		; signal time and date operation
+	jp selmem	; select memory bank
+	jp setbnk	; set bank for next dma
+	jp xmove	; set banks for next move
+	jp 0		; reserved for future expansion
+	jp 0		; reserved for future expansion
+	jp 0		; reserved for future expansion
+
+; Disk Parameter Headers -------------------------------------------------------
+
+dph0:	dw 0,0,0,0,0,0
+        dw dpb,0FFFEh
+        dw 0FFFEh,0FFFEh
+        dw 0FFFFh,0FFFFh
+        db 0
+
+dpb:	dw 26  ; SPT - sectors per track
+	db 3   ; BSH - block shift factor
+	db 7   ; BLM - block mask
+	db 0   ; EXM - Extent mask
+	dw 242 ; DSM - Storage size (blocks - 1)
+	dw 63  ; DRM - Number of directory entries - 1
+	db 192 ; AL0 - 1 bit set per directory block
+	db 0   ; AL1 - ... 8 more bits
+	dw 16  ; CKS - DIR check vector size (DRM+1)/4 (8000h=fixed disk)
+	dw 2   ; OFF - Reserved tracks
+        db 0   ; PSH - physical record shift
+        db 0   ; PSM - physical record mask
+
+; Cold Boot --------------------------------------------------------------------
+
+boot:	ld de,ldrvrs	; display loader version
+msg:	ld a,(de)	; get next character
+	cp '$'		; '$' denotes end of string
+	ret z		; done if current character is '$'
+	ld c,a		; conout expects character in <C>
+	call conout	; display character on console
+	inc de		; point to next character
+	jr msg		; and repeat
+
+
+; Console I/O ------------------------------------------------------------------
+
+conout:	in a,(2)
+	ret
+
+; Disk I/O ---------------------------------------------------------------------
+
+seldsk:	ld hl,0		; bad drive
+	ld a,c		; drive request
+	or a
+	ret nz
+	ld hl,dph0
+        ret
+
+home:	xor a
+        jr settr1
+settrk: ld a,c
+settr1:	ld (seksat+1),a
+        ret
+
+setsec: ld a,c
+        ld (seksat),a
+        ret
+
+setdma: ld (dmaadr),bc
+        ret
+
+sectrn: ld l,c
+	ld h,b
+        ret
+
+read:	xor a
+        ld b,1
+        push de
+        ld de,(seksat)
+        ld hl,(dmaadr)
+        in a,(4)
+        pop de
+	ret
+
+move:	ex de,hl
+	ldir
+	ex de,hl
+	ret
+
+wboot:
+conist:
+conin:
+conost:
+auxist:
+auxost:
+devtbl:
+devini:
+drvtbl:
+multio:
+flush:
+time:
+selmem:
+setbnk:
+xmove:
+listst:
+list:
+punch:
+reader:
+write:
+	ret
+
+; Data area --------------------------------------------------------------------
+
+ldrvrs:	db	13, 10, 'LDRBIOS3 v1.07 27-Jun-2010', 13, 10, '$'
+
+seksat: ds 2   ; seek sector and track number
+dmaadr: ds 2   ; last dma address
+
+bcbr:   ds 16
+bcba:   ds 16
+chk0:   ds 16
+alv0:   ds 62  ; allocation vector 0 (max 255 blocks)
+
+; ------------------------------------------------------------------------------
+
+        end

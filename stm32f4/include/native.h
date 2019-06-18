@@ -121,9 +121,13 @@ struct Console {
     }
 };
 
-struct FlashWear {
-    const char* filename = "flashmem.img";
-    FILE* fp = 0;
+template< int N >
+class DiskImage {
+    const char* filename;
+    FILE* fp;
+
+public:
+    DiskImage (const char* fn) : filename (fn), fp (0) {}
 
     bool valid () {
         FILE* f = fopen(filename, "r+");
@@ -143,12 +147,12 @@ struct FlashWear {
         return 0;
     }
     void readSector (int pos, void* buf) {
-        fseek(fp, 128*pos, SEEK_SET);
-        fread(buf, 128, 1, fp);
+        fseek(fp, N*pos, SEEK_SET);
+        fread(buf, N, 1, fp);
     }
     void writeSector (int pos, void const* buf) {
-        fseek(fp, 128*pos, SEEK_SET);
-        fwrite(buf, 128, 1, fp);
+        fseek(fp, N*pos, SEEK_SET);
+        fwrite(buf, N, 1, fp);
         fflush(fp);
     }
 };
