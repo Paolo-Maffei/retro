@@ -1,0 +1,309 @@
+; Minimal CPM Plus BIOS -jcw, 2018-11-16
+
+drives  equ     8               ; number of drives supported
+true    equ     -1
+false   equ     not true
+
+        maclib  DEFS.LIB        ; file name must be upper case!
+                                ; defines, banked, nhdisks and expcom
+
+; BDOS calls -------------------------------------------------------------------
+
+getch    equ    1       ; BDOS function
+print    equ    9       ; BDOS function
+open     equ    15      ; BDOS function
+readseq  equ    20      ; BDOS function
+dma      equ    26      ; BDOS function
+multisec equ    44      ; BDOS function
+
+; low memory -------------------------------------------------------------------
+
+iobyte  equ 0003h   ; Intel standard I/O definition byte
+usrdrv  equ 0004h   ; Current user number and drive
+bdos    equ 0005h   ; bdos entry point
+tpabuf  equ 0080h   ; Default I/O buffer and command line storage
+ccp     equ 0100h   ; ccp load and start address
+
+;       external references
+        extrn   @civec, @covec, @aovec, @aivec, @lovec, @bnkbf
+        extrn   @crdma, @crdsk, @fx, @resel, @vinfo, @usrcd
+        extrn   @ermde, @date, @hour, @min, @sec, @mxtpa
+
+        cseg
+
+; BIOS jump table --------------------------------------------------------------
+
+        jp boot     ;  0 Initialize
+wboote: jp wboot    ;  1 Warm boot
+        jp conist   ;  2 Console status
+        jp conin    ;  3 Console input
+        jp conout   ;  4 Console OUTput
+        jp list     ;  5 List OUTput
+        jp punch    ;  6 punch OUTput
+        jp reader   ;  7 Reader input
+        jp home     ;  8 Home disk
+        jp seldsk   ;  9 Select disk
+        jp settrk   ; 10 Select track
+        jp setsec   ; 11 Select sector
+        jp setdma   ; 12 Set DMA ADDress
+        jp read     ; 13 Read 128 bytes
+        jp write    ; 14 Write 128 bytes
+        jp listst   ; 15 List status
+        jp sectrn   ; 16 Sector translate
+        jp conost   ; 17 return console output status
+        jp auxist   ; 18 return aux device input status
+        jp auxost   ; 19 return aux device output status
+        jp devtbl   ; 20 return address of character i/o table
+        jp devini   ; 21 init character i/o devices
+        jp drvtbl   ; 22 return address of disk drive table
+        jp multio   ; 23 set number of consec. sec. to read/write
+        jp flush    ; 24 flush user [de]blocking buffers
+        jp move     ; 25 copy memory to memory
+        jp time     ; 26 signal time and date operation
+        jp selmem   ; 27 select memory bank
+        jp setbnk   ; 28 set bank for next dma
+        jp xmove    ; 29 set banks for next move
+        jp 0        ; 30 reserved for future expansion
+        jp 0        ; 31 reserved for future expansion
+        jp 0        ; 32 reserved for future expansion
+
+; Disk Parameter Headers -------------------------------------------------------
+
+        dseg
+
+drvtab: dw dph0,dph1,dph2,dph3,0,0,0,0
+        dw 0,0,0,0,0,0,0,0
+
+dph0:   dw 0,0,0,0,0,0,dpb1,0,0FFFEh,0FFFEh,0FFFFh,0FFFFh
+        db 0
+dph1:   dw 0,0,0,0,0,0,dpb1,0,0FFFEh,0FFFEh,0FFFFh,0FFFFh
+        db 0
+dph2:   dw 0,0,0,0,0,0,dpb1,0,0FFFEh,0FFFEh,0FFFFh,0FFFFh
+        db 0
+dph3:   dw 0,0,0,0,0,0,dpb1,0,0FFFEh,0FFFEh,0FFFFh,0FFFFh
+        db 0
+
+        cseg
+
+dpb1:   dw 18      ; SPT - sectors per track
+	db 4       ; BSH - block shift factor
+	db 15      ; BLM - block mask
+	db 0       ; EXM - Extent mask
+	dw 710     ; DSM - Storage size (blocks - 1)
+	dw 255     ; DRM - Number of directory entries - 1
+	db 0F0h    ; AL0 - 1 bit set per directory block
+	db 0       ; AL1 - ... 8 more bits
+	dw 8000h   ; CKS - DIR check vector size (DRM+1)/4 (8000h=fixed disk)
+	dw 2       ; OFF - Reserved tracks
+        db 2       ; PSH - physical record shift
+        db 3       ; PSM - physical record mask
+
+; Cold & Warm Boot -------------------------------------------------------------
+
+boot:   ld b,1
+        jr wboot1
+
+wboot:  ld b,0
+wboot1: di
+        ld sp,bstack
+
+    if  banked
+        ld a,0C0h
+        in a,(6) ; set memory split at 0C000h
+        ld a,1
+        call selmem
+    endif
+
+        ld hl,tpabuf    ; Address of BIOS DMA buffer
+        ld (dmaadr),hl
+
+        ld a,0C3h
+        ld hl,wboote
+        ld (0000h),a
+        ld (0001h),hl
+        ld hl,(@mxtpa)
+        ld (0005h),a
+        ld (0006h),hl
+        
+        ld a,b
+        or a
+        jp z,ldccp      ; no message on warm boot
+        ld de,greet     ; print version information
+        in a,(3)
+
+;       load ccp.com into tpa
+;
+ldccp:
+        ; FIXME: load CCP from file or system track
+
+        xor a
+        ld (ccpfcb+15),a ; zero extent
+        ld hl,0
+        ld (fcbnr),hl   ; start at beginning of file
+        ld de,ccpfcb
+        ld c,open
+        call bdos       ; open file containing ccp
+        ld de,opnmsg
+        inc a
+        jp z,prterr     ; error if file not found
+        ld de,ccp
+        ld c,dma
+        call bdos       ; start of tpa
+        ld de,128
+        ld c,multisec
+        call bdos       ; allow up to 16k bytes
+        ld de,ccpfcb
+        ld c,readseq
+        call bdos       ; load the thing
+        ld de,iomsg
+        inc a
+        jp nz,ccp
+prterr: call printf     ; print the complaint
+        ;ld c,getch
+        ;call bdos      ; wait for any key
+        ;jp coldboot    ; attempt cold boot
+        halt
+
+printf: ld      c,print
+        jp      bdos
+
+; Console I/O ------------------------------------------------------------------
+
+conist: in a,(0)
+        ret
+
+conin:  in a,(1)
+        ret
+
+conout: in a,(2)
+        ret
+
+reader: ld a,1Ah
+        ret
+
+; Disk I/O ---------------------------------------------------------------------
+
+        dseg
+
+drvtbl: ld hl,drvtab
+        ret
+
+seldsk: ld hl,0         ; bad drive
+        ld a,c          ; drive request
+        ld (sekdsk),a
+        cp drives
+        ret nc          ; exit if no space alloc for drive
+        ld l,c
+        ld h,0
+        add hl,hl       ; create index from drive code
+        ld bc,drvtab
+        add hl,bc       ; get pointer to dispatch table
+        ld a,(hl)
+        inc hl
+        ld h,(hl)
+        ld l,a          ; point at disk descriptor
+        ret
+
+home:   ld c,0
+settrk: ld a,c
+        ld (seksat+1),a
+        ret
+
+setsec: ld hl,seksat
+        ld (hl),c
+        ret
+
+setdma: ld (dmaadr),bc
+        ret
+
+sectrn: ld l,c
+        ld h,b
+        ret
+
+        cseg
+
+read:   ld b,1
+        jr rdwr
+write:  ld b,1+80h
+rdwr:   
+    if banked
+        ld a,(crwbk)
+        in a,(7)
+    endif
+        ld a,(sekdsk)
+        ld de,(seksat)
+        ld hl,(dmaadr)
+        in a,(4)
+    if banked
+        ld c,a
+        ld a,(cbank)
+        in a,(7)
+        ld a,c
+    endif
+        ret
+
+move:   ex de,hl
+        ldir
+        ex de,hl
+        ret
+
+    if  banked
+selmem: ld (cbank),a    ; update current bank
+        in a,(7)
+        ret
+setbnk: ld (crwbk),a
+        ret
+    else
+selmem:
+setbnk:
+    endif
+
+time:   push hl
+        ld hl,@date
+        in a,(5)
+        pop hl
+        ret
+
+devtbl:
+devini:
+xmove:
+listst:
+list:
+punch:
+multio:
+        ret
+
+conost:
+auxist:
+auxost:
+flush:
+        xor a
+        ret
+
+; Data area --------------------------------------------------------------------
+
+ccpFCB: db 1,'CCP     COM',0,0,0,0
+        db 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+fcbNr:  db 0,0,0
+opnmsg: db 13,10,'BIOS can''t open CCP.COM ',0
+iomsg:  db 13,10,'BIOS I/O error reading CCP.COM ',0
+
+sekdsk: ds 1   ; seek disk number
+seksat: ds 2   ; seek sector and track number
+dmaadr: ds 2   ; last dma address
+
+cbank:  ds 1   ; current bank
+crwbk:  ds 1   ; desired bank for read/write
+
+greet:  db 13,10,'CP/M vers 3.0 ('
+    if not banked
+        db 'non'
+    endif
+        db 'banked)',13,10,0
+
+        ds 8
+bstack  equ $
+
+; ------------------------------------------------------------------------------
+
+        end

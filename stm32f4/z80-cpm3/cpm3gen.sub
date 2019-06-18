@@ -1,0 +1,4 @@
+z80asm bios3/fm
+z80asm scb/m
+link bios3[os]=bios3,scb
+gencpm auto display

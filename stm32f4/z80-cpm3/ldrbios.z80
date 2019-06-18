@@ -49,7 +49,7 @@ dph0:	dw 0,0,0,0,0,0
 dpb:	dw 18    ; SPT - sectors per track
 	db 4     ; BSH - block shift factor
 	db 15    ; BLM - block mask
-	db 1     ; EXM - Extent mask
+	db 0     ; EXM - Extent mask
 	dw 701   ; DSM - Storage size (blocks - 1)
 	dw 255   ; DRM - Number of directory entries - 1
 	db 240   ; AL0 - 1 bit set per directory block

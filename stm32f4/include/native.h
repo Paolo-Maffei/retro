@@ -139,7 +139,7 @@ public:
         if (erase) {
             printf("initialising internal flash\r\n");
             FILE* f = fopen(filename, "w+");
-            constexpr int size = N == 128 ? 256*1024 : 1440*1024;
+            constexpr int size = N == 128 ? 77*26*128 : 1440*1024;
             fseek(f, size-1, SEEK_SET);
             fputc(0, f);
             fclose(f);
