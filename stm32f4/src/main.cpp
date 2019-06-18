@@ -164,10 +164,11 @@ uint16_t initMemory (uint8_t* mem) {
         for (uint32_t off = 0; off < sizeof rom_cpm; off += 128)
             fdisk.writeSector(off/128, rom_cpm + off);
 
-        // write 16 empty directory sectors to track 2
+        // write 26 empty directory sectors to track 2
+        // only 16 are used, but this way it covers both skewed and unskewed
         uint8_t buf [128];
         memset(buf, 0xE5, sizeof buf);
-        for (int i = 0; i < 16; ++i)
+        for (int i = 0; i < 26; ++i)
             fdisk.writeSector(26*2 + i, buf);
     }
 

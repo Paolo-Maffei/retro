@@ -122,7 +122,7 @@ struct Console {
 };
 
 struct FlashWear {
-    const char* filename = "flashmem.dat";
+    const char* filename = "flashmem.img";
     FILE* fp = 0;
 
     bool valid () {
