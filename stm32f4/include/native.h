@@ -139,7 +139,8 @@ public:
         if (erase) {
             printf("initialising internal flash\r\n");
             FILE* f = fopen(filename, "w+");
-            fseek(f, 256*1024-1, SEEK_SET);
+            constexpr int size = N == 128 ? 256*1024 : 1440*1024;
+            fseek(f, size-1, SEEK_SET);
             fputc(0, f);
             fclose(f);
         }
@@ -148,6 +149,7 @@ public:
     }
     void readSector (int pos, void* buf) {
         fseek(fp, N*pos, SEEK_SET);
+        memset(buf, 0xE5, N); // in case read is past the current file end
         fread(buf, N, 1, fp);
     }
     void writeSector (int pos, void const* buf) {

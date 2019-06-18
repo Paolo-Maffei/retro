@@ -1,0 +1,27 @@
+	title	'System Control Block Definition for CP/M3 BIOS'
+	public	@civec, @covec, @aivec, @aovec, @lovec, @bnkbf
+	public	@crdma
+	public	@crdsk, @fx, @resel, @vinfo, @usrcd, @ermde
+	public	@date, @hour, @min, @sec, @mxtpa
+
+scb$base	equ	0fe00h		;base of the scb
+@civec	equ	scb$base+22h
+@covec	equ	scb$base+24h
+@aivec	equ	scb$base+26h
+@aovec	equ	scb$base+28h
+@lovec	equ	scb$base+2ah
+@bnkbf	equ	scb$base+35h
+@crdma	equ	scb$base+3ch
+@crdsk	equ	scb$base+3eh
+@vinfo	equ	scb$base+3fh
+@resel	equ	scb$base+41h
+@fx	equ	scb$base+43h
+@usrcd	equ	scb$base+44h
+@ermde	equ	scb$base+4bh
+@date	equ	scb$base+58h
+@hour	equ	scb$base+5ah
+@min	equ	scb$base+5bh
+@sec	equ	scb$base+5ch
+?erjmp	equ	scb$base+5fh
+@mxtpa	equ	scb$base+62h
+	end

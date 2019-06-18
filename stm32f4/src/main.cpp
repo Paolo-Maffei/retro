@@ -17,7 +17,7 @@ Console console;
 DummyGPIO led;
 
 DiskImage<128> fdisk ("flashmem.img");
-DiskImage<512> sdisk ("sdboot.img");
+DiskImage<512> sdisk ("sdcard.img");
 
 #else // NATIVE
 
@@ -92,19 +92,24 @@ void systemCall (void* context, int req) {
             //  ld hl,(dmaadr)
             //  in a,(5)
             //  ret
-            //printf("AF %04X BC %04X DE %04X HL %04X\n", AF, BC, DE, HL);
+            printf("AF %04X BC %04X DE %04X HL %04X\r\n", AF, BC, DE, HL);
             {
                 bool out = (B & 0x80) != 0;
                 uint8_t sec = DE, trk = DE >> 8, dsk = A, cnt = B & 0x7F;
                 uint32_t pos = 4096*dsk + 18*trk + sec;  // no skewing
 
                 for (int i = 0; i < cnt; ++i) {
-                    void* mem = mapMem(&context, HL + 512*i);
+                    printf("read %d pos %d\r\n", i, pos);
+                    uint8_t* mem = mapMem(&context, HL + 512*i);
                     if (out)
                         sdisk.writeSector(pos + i, mem);
                     else
                         sdisk.readSector(pos + i, mem);
+                    for (int j = 0; j < 16; ++j)
+                        printf(" %02x", mem[j]);
+                    printf("\r\n");
                 }
+                printf("read ok\r\n");
             }
             A = 0;
             break;
