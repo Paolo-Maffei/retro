@@ -47,7 +47,8 @@ Z80_STATE z80state;
 
 void systemCall (void* context, int req) {
     Z80_STATE* state = &z80state;
-    //printf("req %d A %d\n", req, A);
+    if (req > 3)
+        printf("req %d A %d\r\n", req, A);
     switch (req) {
         case 0: // coninst
             A = console.readable() ? 0xFF : 0x00;
@@ -69,6 +70,7 @@ void systemCall (void* context, int req) {
             //  ld hl,(dmaadr)
             //  in a,(4)
             //  ret
+            printf("AF %04X BC %04X DE %04X HL %04X\r\n", AF, BC, DE, HL);
             {
                 bool out = (B & 0x80) != 0;
                 uint8_t sec = DE, trk = DE >> 8, dsk = A, cnt = B & 0x7F;
@@ -99,17 +101,29 @@ void systemCall (void* context, int req) {
                 uint32_t pos = 4096*dsk + 18*trk + sec;  // no skewing
 
                 for (int i = 0; i < cnt; ++i) {
-                    printf("read %d pos %d\r\n", i, pos);
+                    //printf("read %d pos %d\r\n", i, pos);
                     uint8_t* mem = mapMem(&context, HL + 512*i);
                     if (out)
                         sdisk.writeSector(pos + i, mem);
                     else
                         sdisk.readSector(pos + i, mem);
-                    for (int j = 0; j < 16; ++j)
-                        printf(" %02x", mem[j]);
-                    printf("\r\n");
+#if 0
+                    for (int j = 0; j < 512; ++j) {
+                        printf("%02x", mem[j]);
+                        if (j % 32 == 31)
+                            printf("\r\n");
+                    }
+                    for (int j = 0; j < 512; ++j) {
+                        uint8_t c = mem[j];
+                        if (c < ' ' || c > '~')
+                            c = '.';
+                        printf("%c", c);
+                        if (j % 32 == 31)
+                            printf("\r\n");
+                    }
+#endif
                 }
-                printf("read ok\r\n");
+                //printf("read ok\r\n");
             }
             A = 0;
             break;

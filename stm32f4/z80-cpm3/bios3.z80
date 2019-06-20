@@ -85,7 +85,7 @@ dph3:   dw 0,0,0,0,0,0,dpb1,0,0FFFEh,0FFFEh,0FFFFh,0FFFFh
 
         cseg
 
-dpb1:   dw 18      ; SPT - sectors per track
+dpb1:   dw 72      ; SPT - sectors per track
 	db 4       ; BSH - block shift factor
 	db 15      ; BLM - block mask
 	db 0       ; EXM - Extent mask
@@ -109,7 +109,7 @@ wboot1: di
 
     if  banked
         ld a,0C0h
-        in a,(6) ; set memory split at 0C000h
+        in a,(7) ; set memory split at 0C000h
         ld a,1
         call selmem
     endif
@@ -228,16 +228,16 @@ write:  ld b,1+80h
 rdwr:   
     if banked
         ld a,(crwbk)
-        in a,(7)
+        in a,(8)
     endif
         ld a,(sekdsk)
         ld de,(seksat)
         ld hl,(dmaadr)
-        in a,(4)
+        in a,(5)
     if banked
         ld c,a
         ld a,(cbank)
-        in a,(7)
+        in a,(8)
         ld a,c
     endif
         ret
@@ -249,7 +249,7 @@ move:   ex de,hl
 
     if  banked
 selmem: ld (cbank),a    ; update current bank
-        in a,(7)
+        in a,(8)
         ret
 setbnk: ld (crwbk),a
         ret
@@ -260,7 +260,7 @@ setbnk:
 
 time:   push hl
         ld hl,@date
-        in a,(5)
+        in a,(6)
         pop hl
         ret
 

@@ -41,12 +41,12 @@
 ; Disk Parameter Headers -------------------------------------------------------
 
 dph0:	dw 0,0,0,0,0,0
-        dw dpb,0FFFEh
-        dw 0FFFEh,0FFFEh
+        dw dpb,csv
+        dw alv,0FFFEh
         dw 0FFFFh,0FFFFh
         db 0
 
-dpb:	dw 18    ; SPT - sectors per track
+dpb:	dw 72    ; SPT - sectors per track
 	db 4     ; BSH - block shift factor
 	db 15    ; BLM - block mask
 	db 0     ; EXM - Extent mask
@@ -145,10 +145,8 @@ ldrvrs:	db	13, 10, 'LDRBIOS3 v1.07 27-Jun-2010', 13, 10, '$'
 seksat: ds 2   ; seek sector and track number
 dmaadr: ds 2   ; last dma address
 
-bcbr:   ds 16
-bcba:   ds 16
-chk0:   ds 16
-alv0:   ds 62  ; allocation vector 0 (max 255 blocks)
+csv:    ds 64
+alv:    ds 177
 
 ; ------------------------------------------------------------------------------
 
