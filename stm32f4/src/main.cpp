@@ -47,8 +47,8 @@ Z80_STATE z80state;
 
 void systemCall (void* context, int req) {
     Z80_STATE* state = &z80state;
-    if (req > 3)
-        printf("req %d A %d\r\n", req, A);
+    //if (req > 3)
+    //    printf("req %d A %d\r\n", req, A);
     switch (req) {
         case 0: // coninst
             A = console.readable() ? 0xFF : 0x00;
@@ -70,7 +70,7 @@ void systemCall (void* context, int req) {
             //  ld hl,(dmaadr)
             //  in a,(4)
             //  ret
-            printf("AF %04X BC %04X DE %04X HL %04X\r\n", AF, BC, DE, HL);
+            printf("4: AF %04X BC %04X DE %04X HL %04X\r\n", AF, BC, DE, HL);
             {
                 bool out = (B & 0x80) != 0;
                 uint8_t sec = DE, trk = DE >> 8, dsk = A, cnt = B & 0x7F;
@@ -94,7 +94,7 @@ void systemCall (void* context, int req) {
             //  ld hl,(dmaadr)
             //  in a,(5)
             //  ret
-            printf("AF %04X BC %04X DE %04X HL %04X\r\n", AF, BC, DE, HL);
+            printf("5: AF %04X BC %04X DE %04X HL %04X\r\n", AF, BC, DE, HL);
             {
                 bool out = (B & 0x80) != 0;
                 uint8_t sec = DE, trk = DE >> 8, dsk = A, cnt = B & 0x7F;

@@ -17,11 +17,11 @@ disk1: $A/boot.com $A/bdos22.com $A/bios2.com
 	dd if=/dev/zero of=$O bs=1 seek=256255 count=1
 	cpmcp $F $O $C/*.com 0:
 
-cpm2gen: disk1
+cpm2: disk1
 	cpmcp $F -t $O $C/*.sub $A/b*.z80 0:
 	ls -l $O
 
-cpm3ldr: disk1
+cpm3: disk1
 	cpmcp $F $O $B/gencpm.com $B/link.com 0:
 	cpmcp $F -t $O $B/defsnb.lib 0:defs.lib
 	cpmcp $F -t $O $B/gencpmnb.dat 0:gencpm.dat

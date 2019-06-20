@@ -149,7 +149,6 @@ public:
     }
     void readSector (int pos, void* buf) {
         fseek(fp, N*pos, SEEK_SET);
-        memset(buf, 0xE5, N); // in case read is past the current file end
         fread(buf, N, 1, fp);
     }
     void writeSector (int pos, void const* buf) {
