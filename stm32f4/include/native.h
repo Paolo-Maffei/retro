@@ -11,6 +11,9 @@
 #include <sys/filio.h>
 #endif
 
+// this macro messes up JeeH on linux
+#undef putc
+
 struct termios tiosSaved;
 static int done, batchMode;
 
