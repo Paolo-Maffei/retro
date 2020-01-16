@@ -1,2 +1,2 @@
 all:
-	pio run && .pioenvs/native/program
+	pio run && .pio/build/native/program
