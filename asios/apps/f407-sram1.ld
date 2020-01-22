@@ -11,8 +11,7 @@ ENTRY(Reset_Handler)
 /* Highest address of the user mode stack */ 
 _estack = 0x2001C000;    /* end of SRAM1 */
 /* Generate a link error if heap and stack don't fit into RAM */
-_Min_Heap_Size = 0x200;      /* required amount of heap  */
-_Min_Stack_Size = 0x400;     /* required amount of stack */
+_Min_Stack_Size = 0x100;     /* required amount of stack */
 
 /* Specify the memory areas */
 MEMORY
@@ -25,10 +24,10 @@ MEMORY
 SECTIONS
 {
   /* The startup code goes first into FLASH */
-  .isr_vector :
+  .isr_vec :
   {
     . = ALIGN(4);
-    KEEP(*(.isr_vector)) /* Startup code */
+    KEEP(*(.isr_vec)) /* Startup code */
     . = ALIGN(4);
   } >FLASH
 
@@ -123,7 +122,6 @@ SECTIONS
     . = ALIGN(4);
     PROVIDE ( end = . );
     PROVIDE ( _end = . );
-    . = . + _Min_Heap_Size;
     . = . + _Min_Stack_Size;
     . = ALIGN(4);
   } >SRAM1

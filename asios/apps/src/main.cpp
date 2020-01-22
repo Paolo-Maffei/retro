@@ -10,6 +10,16 @@ int printf(const char* fmt, ...) {
 //PinA<6> led;
 PinA<7> led;
 
+extern char _estack;
+extern "C" void Reset_Handler ();
+
+
+extern __attribute__ ((section(".isr_vec")))
+void (* const g_pfnVec[])() = {
+    (void (*)()) &_estack, // stack pointer
+    Reset_Handler,         // reset handler
+};
+
 int main() {
     console.init();
     console.baud(115200, fullSpeedClock()/2);
