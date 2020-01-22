@@ -9,7 +9,7 @@
 ENTRY(Reset_Handler)
 
 /* Highest address of the user mode stack */ 
-_estack = 0x20020000;    /* end of SRAM2 */
+_estack = 0x2001C000;    /* end of SRAM1 */
 /* Generate a link error if heap and stack don't fit into RAM */
 _Min_Heap_Size = 0x200;      /* required amount of heap  */
 _Min_Stack_Size = 0x400;     /* required amount of stack */
@@ -17,7 +17,7 @@ _Min_Stack_Size = 0x400;     /* required amount of stack */
 /* Specify the memory areas */
 MEMORY
 {
-    SRAM2 (xrw)     : ORIGIN = 0x2001C000, LENGTH = 16K
+    SRAM1 (xrw)     : ORIGIN = 0x20000000, LENGTH = 112K
     FLASH (rx)      : ORIGIN = 0x08000000, LENGTH = 512K
 }
 
@@ -32,7 +32,7 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
 
-  /* The program code and other data goes into FLASH */
+  /* The program code and other data goes into SRAM1 */
   .text :
   {
     . = ALIGN(4);
@@ -47,44 +47,44 @@ SECTIONS
 
     . = ALIGN(4);
     _etext = .;        /* define a global symbols at end of code */
-  } >FLASH
+  } >SRAM1
 
-  /* Constant data goes into FLASH */
+  /* Constant data goes into SRAM1 */
   .rodata :
   {
     . = ALIGN(4);
     *(.rodata)         /* .rodata sections (constants, strings, etc.) */
     *(.rodata*)        /* .rodata* sections (constants, strings, etc.) */
     . = ALIGN(4);
-  } >FLASH
+  } >SRAM1
 
-  .ARM.extab   : { *(.ARM.extab* .gnu.linkonce.armextab.*) } >FLASH
+  .ARM.extab   : { *(.ARM.extab* .gnu.linkonce.armextab.*) } >SRAM1
   .ARM : {
     __exidx_start = .;
     *(.ARM.exidx*)
     __exidx_end = .;
-  } >FLASH
+  } >SRAM1
 
   .preinit_array     :
   {
     PROVIDE_HIDDEN (__preinit_array_start = .);
     KEEP (*(.preinit_array*))
     PROVIDE_HIDDEN (__preinit_array_end = .);
-  } >FLASH
+  } >SRAM1
   .init_array :
   {
     PROVIDE_HIDDEN (__init_array_start = .);
     KEEP (*(SORT(.init_array.*)))
     KEEP (*(.init_array*))
     PROVIDE_HIDDEN (__init_array_end = .);
-  } >FLASH
+  } >SRAM1
   .fini_array :
   {
     PROVIDE_HIDDEN (__fini_array_start = .);
     KEEP (*(SORT(.fini_array.*)))
     KEEP (*(.fini_array*))
     PROVIDE_HIDDEN (__fini_array_end = .);
-  } >FLASH
+  } >SRAM1
 
   /* used by the startup to initialize data */
   _sidata = LOADADDR(.data);
@@ -99,7 +99,7 @@ SECTIONS
 
     . = ALIGN(4);
     _edata = .;        /* define a global symbol at data end */
-  } >SRAM2 AT> FLASH
+  } >SRAM1 AT> SRAM1
   
   /* Uninitialized data section */
   . = ALIGN(4);
@@ -115,7 +115,7 @@ SECTIONS
     . = ALIGN(4);
     _ebss = .;         /* define a global symbol at bss end */
     __bss_end__ = _ebss;
-  } >SRAM2
+  } >SRAM1
 
   /* User_heap_stack section, used to check that there is enough RAM left */
   ._user_heap_stack :
@@ -126,7 +126,7 @@ SECTIONS
     . = . + _Min_Heap_Size;
     . = . + _Min_Stack_Size;
     . = ALIGN(4);
-  } >SRAM2
+  } >SRAM1
 
   
 
