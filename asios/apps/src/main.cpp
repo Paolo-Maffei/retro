@@ -1,14 +1,27 @@
 #include <jee.h>
 
+#if BLACK_F407VE
+PinA<6> led2;
+PinA<7> led3;
+#define LED led2
+
 UartBufDev< PinA<9>, PinA<10> > console;
+#endif
+
+#if DISCO_F407VG
+PinD<12> greenLed;
+PinD<13> orangeLed;
+PinD<14> redLed;
+PinD<15> blueLed;
+#define LED greenLed
+
+UartBufDev< PinA<2>, PinA<3> > console;
+#endif
 
 int printf(const char* fmt, ...) {
     va_list ap; va_start(ap, fmt); veprintf(console.putc, fmt, ap); va_end(ap);
     return 0;
 }
-
-//PinA<6> led;
-PinA<7> led;
 
 extern char _etext;
 extern char _edata;
@@ -45,13 +58,13 @@ ExeHeader g_exeHeader = {
 int main() {
     console.init();
     console.baud(115200, fullSpeedClock()/2);
-    led.mode(Pinmode::out);
+    LED.mode(Pinmode::out);
 
     while (true) {
         printf("%d\n", ticks);
-        led = 0;
+        LED = 0;
         wait_ms(100);
-        led = 1;
+        LED = 1;
         wait_ms(900);
     }
 }
