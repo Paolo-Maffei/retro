@@ -28,8 +28,8 @@ struct ExeHeader {
     uint32_t magic;
     uint32_t reset;
     uint32_t etext, edata, ebss, estack;
-    uint32_t filler [2];    // header is 32 bytes
-};
+    uint32_t aux1, aux2;
+}; // header is 32 bytes
 
 __attribute__ ((section(".exe_header")))
 ExeHeader g_exeHeader = {
