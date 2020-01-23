@@ -107,7 +107,7 @@ SECTIONS
 
     . = ALIGN(4);
     _edata = .;        /* define a global symbol at data end */
-  } >SRAM AT> SRAM
+  } >SRAM
   
   /* Uninitialized data section */
   . = ALIGN(4);
