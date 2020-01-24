@@ -7,25 +7,15 @@ int printf(const char* fmt, ...) {
     return 0;
 }
 
-#if BLACK_F407VE
 PinA<6> led2;
 PinA<7> led3;
 #define LED led3
-#endif
 
 extern char _etext;
 extern char _edata;
 extern char _ebss;
 extern char _estack;
 extern "C" void Reset_Handler ();
-
-#if 1 // flash
-extern __attribute__ ((section(".isr_vec")))
-void (* const g_pfnVec[])() = {
-    (void (*)()) &_estack, // stack pointer
-    Reset_Handler,         // reset handler
-};
-#endif
 
 struct ExeHeader {
     uint32_t magic;
