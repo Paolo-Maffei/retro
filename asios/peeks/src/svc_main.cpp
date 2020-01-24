@@ -10,7 +10,7 @@ int printf(const char* fmt, ...) {
 PinA<6> led;
 //PinA<7> led2;
 
-int main() {
+int main () {
     console.init();
     console.baud(115200, fullSpeedClock()/2);
     led.mode(Pinmode::out);

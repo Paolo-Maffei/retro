@@ -1,6 +1,6 @@
 /* PlatformIO default linker script template for STM32 F4 */
 
-ENTRY(Reset_Handler)
+ENTRY(main)
 
 /* Highest address of the user mode stack */ 
 _estack = 0x20010000;    /* end of SRAM */
