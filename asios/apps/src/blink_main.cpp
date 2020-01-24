@@ -11,27 +11,19 @@ PinA<6> led2;
 PinA<7> led3;
 #define LED led3
 
-extern char _etext;
-extern char _edata;
-extern char _ebss;
-extern char _estack;
+extern char _etext, _edata, _ebss, _estack;
 extern "C" void Reset_Handler ();
 
 struct ExeHeader {
-    uint32_t magic;
-    uint32_t reset;
-    uint32_t etext, edata, ebss, estack;
+    uint32_t magic, reset;
+    char *etext, *edata, *ebss, *estack;
     uint32_t aux1, aux2;
 }; // header is 32 bytes
 
 __attribute__ ((section(".exe_header")))
 ExeHeader g_exeHeader = {
-    0x12345678,
-    (uint32_t) Reset_Handler,
-    (uint32_t) &_etext,
-    (uint32_t) &_edata,
-    (uint32_t) &_ebss,
-    (uint32_t) &_estack,
+    0x12345678, (uint32_t) Reset_Handler,
+    &_etext, &_edata, &_ebss, &_estack,
     0, 0,
 };
 
