@@ -7,19 +7,36 @@ int printf(const char* fmt, ...) {
     return 0;
 }
 
-PinA<6> led;
-//PinA<7> led2;
+PinA<6> led2;
+PinA<7> led3;
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+// print a string on the polled uart, can be used even with interrupts disabled,
+// but the elapsed time waiting for the uart will slow things down ... a lot
+void kputs (const char* msg) {
+    auto& polled = (UartBufDev< PinA<9>, PinA<10> >::base&) console;
+    while (*msg)
+        polled.putc(*msg++);
+}
+
+// give up, but not before trying to send a final message to the console port
+void panic (const char* msg) {
+    __asm("cpsid if"); // disable interrupts
+    kputs("\n*** panic: "); kputs(msg); kputs(" ***\n");
+    while (1) {} // die
+}
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Task switcher, adapted from a superb example in Joseph Liu's book, ch. 10:
 // "The Definitive Guide to Arm Cortex M3 and M4", 3rd edition, 2014.
 
 constexpr int MAX_TASKS = 4;
-uint32_t  PSP_array[MAX_TASKS]; // Process Stack Pointer for each task
-uint32_t  curr_task;            // current task
-uint32_t  next_task;            // next task
+uint32_t* PSP_array[MAX_TASKS]; // Process Stack Pointer for each task
+uint32_t curr_task;            // current task
+uint32_t next_task;            // next task
 
-__attribute__((naked))
+//__attribute__((naked))
 void PendSV_Handler(void)
 {   // Context switching code - no floating point support
     __asm volatile (" \n\
@@ -41,36 +58,30 @@ void PendSV_Handler(void)
     ");
 }
 
-inline void startThreading (void* stackTop) {
-    // prepare to run the rest of this code in unprivileged thread mode, with a
-    // separate PSP stack, keeping the original stack for MSP/handler use
-    asm volatile ("msr psp, %0\n" :: "r" (stackTop));
+void startTasking () {
+    // prepare to run all tasks in unprivileged thread mode, with one PSP
+    // stack per task, keeping the original main stack for MSP/handler use
+    uint32_t* psp = PSP_array[0];
+    asm volatile ("msr psp, %0\n" :: "r" (psp + 16));
 
     // PendSV will be used to switch stacks, at the lowest interrupt priority
     *(uint8_t*) 0xE000ED22 = 0xFF; // SHPR3->PRI_14 = 0xFF
     VTableRam().pend_sv = PendSV_Handler;
 
-    // and now the big jump, turning this into the main application thread
     asm volatile ("msr control, %0\n" :: "r" (3)); // go to unprivileged mode
     asm volatile ("isb\n"); // memory barrier, probably not needed on M3/M4
-    // running in unprivileged thread mode from now on, acting as task zero
+
+    // launch task zero, running in unprivileged thread mode from now on
+    ((void (*)()) psp[14])();
+
+    panic("task 0 exit");
 }
 
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-// print a string on the polled uart, can be used even with interrupts disabled,
-// but the elapsed time waiting for the uart will slow things down ... a lot
-void kputs (const char* msg) {
-    auto& polled = (UartBufDev< PinA<9>, PinA<10> >::base&) console;
-    while (*msg)
-        polled.putc(*msg++);
-}
-
-// give up, but not before trying to send a final message to the console port
-void panic (const char* msg) {
-    __asm("cpsid if"); // disable interrupts
-    kputs("\n*** "); kputs(msg); kputs(" ***\n");
-    while (1) {} // die
+void initTask (int index, void* stackTop, void (*func)()) {
+    uint32_t* psp = (uint32_t*) stackTop - 16;
+    psp[14] = (uint32_t) func; // initial PC
+    psp[15] = 0x01000000; // initial xPSR
+    PSP_array[index] = psp;
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -78,8 +89,14 @@ void panic (const char* msg) {
 int main () {
     console.init();
     console.baud(115200, fullSpeedClock()/2);
-    led.mode(Pinmode::out);
-    wait_ms(100); // so PIO console has time to init
+    led2.mode(Pinmode::out); led2 = 1; // inverted logic
+    led3.mode(Pinmode::out); led3 = 1; // inverted logic
+    wait_ms(200); // so PIO console has time to init
+
+    VTableRam().hard_fault          = []() { panic("hard fault"); };
+    VTableRam().bus_fault           = []() { panic("bus fault"); };
+    VTableRam().usage_fault         = []() { panic("usage fault"); };
+    VTableRam().memory_manage_fault = []() { panic("mem fault"); };
 
     // divider must stay below 16,777,216 (24-bit counter)
     // at 50 Hz, 32-bit ticks will roll over in 6.8 years
@@ -87,23 +104,31 @@ int main () {
 
     VTableRam().systick = []() {
         ++ticks;
+        next_task = 1 - curr_task; // FIXME test: alternate between tasks 0 & 1
         if (curr_task != next_task)
             *(uint32_t*) 0xE000ED04 |= 1<<28; // SCB->ICSR |= PENDSVSET
     };
 
-    VTableRam().hard_fault          = []() { panic("HARD FAULT"); };
-    VTableRam().bus_fault           = []() { panic("BUS FAULT"); };
-    VTableRam().usage_fault         = []() { panic("USAGE FAULT"); };
-    VTableRam().memory_manage_fault = []() { panic("MEM FAULT"); };
+    alignas(8) static uint8_t stack0 [1000];
+    initTask(0, stack0 + sizeof stack0, []() {
+        while (true) {
+            printf("%d\n", ticks);
+            led2 = 0;
+            wait_ms(100/20);
+            led2 = 1;
+            wait_ms(900/20);
+        }
+    });
 
-    alignas(8) uint8_t myStack [1000];
-    startThreading(myStack + sizeof myStack); // this MUST be inline code!
+    alignas(8) static uint8_t stack1 [1000];
+    initTask(1, stack1 + sizeof stack1, []() {
+        while (true) {
+            led3 = 0;
+            wait_ms(20/20);
+            led3 = 1;
+            wait_ms(250/20);
+        }
+    });
 
-    while (true) {
-        printf("%d\n", ticks);
-        led = 0;
-        wait_ms(100/20);
-        led = 1;
-        wait_ms(900/20);
-    }
+    startTasking(); // start task 0, never returns
 }
