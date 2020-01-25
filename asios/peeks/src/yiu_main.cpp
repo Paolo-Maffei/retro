@@ -28,7 +28,7 @@ void panic (const char* msg) {
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Task switcher, adapted from a superb example in Joseph Liu's book, ch. 10:
+// Task switcher, adapted from a superb example in Joseph Yiu's book, ch. 10:
 // "The Definitive Guide to Arm Cortex M3 and M4", 3rd edition, 2014.
 
 constexpr int MAX_TASKS = 4;
@@ -69,7 +69,7 @@ void startTasking () {
     VTableRam().pend_sv = PendSV_Handler;
 
     asm volatile ("msr control, %0\n" :: "r" (3)); // go to unprivileged mode
-    asm volatile ("isb\n"); // memory barrier, probably not needed on M3/M4
+    asm volatile ("isb\n"); // memory barrier, not really needed on M3/M4
 
     // launch task zero, running in unprivileged thread mode from now on
     ((void (*)()) psp[14])();
