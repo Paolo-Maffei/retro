@@ -24,36 +24,35 @@ void PendSV_Handler(void)
 {   // Context switching code - no floating point support
     __asm volatile (" \n\
         // save current context \n\
-        MRS    R0, PSP      // get current process stack pointer value \n\
-        STMDB  R0!,{R4-R11} // save R4 to R11 in task stack (8 regs) \n\
-        LDR    R1,=(curr_task) \n\
-        LDR    R2,[R1]      // get current task ID \n\
-        LDR    R3,=(PSP_array) \n\
-        STR    R0,[R3, R2, LSL #2] // save PSP value into PSP_array \n\
+        mrs    r0, psp      // get current process stack pointer value \n\
+        stmdb  r0!,{r4-r11} // save R4 to R11 in task stack (8 regs) \n\
+        ldr    r1,=(curr_task) \n\
+        ldr    r2,[r1]      // get current task ID \n\
+        ldr    r3,=(PSP_array) \n\
+        str    r0,[r3, r2, lsl #2] // save PSP value into PSP_array \n\
         // load next context \n\
-        LDR    R4,=(next_task) \n\
-        LDR    R4,[R4]      // get next task ID \n\
-        STR    R4,[R1]      // set curr_task = next_task \n\
-        LDR    R0,[R3, R4, LSL #2] // Load PSP value from PSP_array \n\
-        LDMIA  R0!,{R4-R11} // load R4 to R11 from task stack (8 regs) \n\
-        MSR    PSP, R0      // set PSP to next task \n\
-        BX     LR           // return \n\
+        ldr    r4,=(next_task) \n\
+        ldr    r4,[r4]      // get next task ID \n\
+        str    r4,[r1]      // set curr_task = next_task \n\
+        ldr    r0,[r3, r4, lsl #2] // Load PSP value from PSP_array \n\
+        ldmia  r0!,{r4-r11} // load R4 to R11 from task stack (8 regs) \n\
+        msr    psp, r0      // set PSP to next task \n\
+        bx     lr           // return \n\
     ");
 }
 
 inline void startThreading (void* stackTop) {
     // prepare to run the rest of this code in unprivileged thread mode, with a
     // separate PSP stack, keeping the original stack for MSP/handler use
-    // note: no stack variables can be used from here on down, due to switching
-    asm volatile ("MSR psp, %0\n" :: "r" (stackTop));
+    asm volatile ("msr psp, %0\n" :: "r" (stackTop));
 
     // PendSV will be used to switch stacks, at the lowest interrupt priority
     *(uint8_t*) 0xE000ED22 = 0xFF; // SHPR3->PRI_14 = 0xFF
     VTableRam().pend_sv = PendSV_Handler;
 
     // and now the big jump, turning this into the main application thread
-    asm volatile ("MSR control, %0\n" :: "r" (3)); // go to unprivileged mode
-    asm volatile ("ISB\n"); // memory barrier, probably not needed on M3/M4
+    asm volatile ("msr control, %0\n" :: "r" (3)); // go to unprivileged mode
+    asm volatile ("isb\n"); // memory barrier, probably not needed on M3/M4
     // running in unprivileged thread mode from now on, acting as task zero
 }
 
@@ -67,12 +66,14 @@ void kputs (const char* msg) {
         polled.putc(*msg++);
 }
 
-// give up, but not before trying to get a final message on the console port
+// give up, but not before trying to send a final message to the console port
 void panic (const char* msg) {
     __asm("cpsid if"); // disable interrupts
     kputs("\n*** "); kputs(msg); kputs(" ***\n");
     while (1) {} // die
 }
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 int main () {
     console.init();
@@ -85,7 +86,6 @@ int main () {
     enableSysTick(168000000/50); // 50 Hz
 
     VTableRam().systick = []() {
-        //console.putc('.');
         ++ticks;
         if (curr_task != next_task)
             *(uint32_t*) 0xE000ED04 |= 1<<28; // SCB->ICSR |= PENDSVSET
@@ -96,7 +96,7 @@ int main () {
     VTableRam().usage_fault         = []() { panic("USAGE FAULT"); };
     VTableRam().memory_manage_fault = []() { panic("MEM FAULT"); };
 
-    static uint8_t myStack [1000] __attribute__ ((aligned(8)));
+    alignas(8) uint8_t myStack [1000];
     startThreading(myStack + sizeof myStack); // this MUST be inline code!
 
     while (true) {
