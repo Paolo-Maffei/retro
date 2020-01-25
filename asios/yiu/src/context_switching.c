@@ -148,7 +148,7 @@ __asm volatile (" \n\
   ITE    EQ \n\
   MRSEQ  R0, MSP \n\
   MRSNE  R0, PSP \n\
-  B      HardFault_Handler \n\
+  B      HardFault_Handler_C \n\
 ");
 }	
 
