@@ -25,8 +25,8 @@ void panic (const char* msg) {
     while (1) {} // die
 }
 
-// set up and enabled the main fault handlers
-void enableFaultHandlers () {
+// set up and enable the main fault handlers
+void initFaultHandlers () {
     VTableRam().hard_fault          = []() { panic("hard fault"); };
     VTableRam().memory_manage_fault = []() { panic("mem fault"); };
     VTableRam().bus_fault           = []() { panic("bus fault"); };
@@ -91,14 +91,15 @@ void startMultiTasker () {
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 int main () {
+    const auto hz = fullSpeedClock();
     console.init();
-    console.baud(115200, fullSpeedClock()/2);
-    enableFaultHandlers();
-    wait_ms(200); // so PIO console has time to init
+    console.baud(115200, hz/2);
+    initFaultHandlers();
+    wait_ms(200); // give platformio's console time to connect
 
     // divider must stay below 16,777,216 (24-bit counter)
     // at 50 Hz, 32-bit ticks will roll over in 6.8 years
-    enableSysTick(168000000/50); // 50 Hz
+    enableSysTick(hz/50); // 50 Hz
 
     VTableRam().systick = []() {
         ++ticks;
