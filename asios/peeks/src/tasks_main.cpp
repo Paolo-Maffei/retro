@@ -1,21 +1,19 @@
 #include <jee.h>
 
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Console device and main kernel debugging.
+
 UartBufDev< PinA<9>, PinA<10> > console;
 
-int printf(const char* fmt, ...) {
+int printf (const char* fmt, ...) {
     va_list ap; va_start(ap, fmt); veprintf(console.putc, fmt, ap); va_end(ap);
     return 0;
 }
 
-PinA<6> led2;
-PinA<7> led3;
-
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-// print a string on the polled uart, can be used even with interrupts disabled,
-// but the elapsed time waiting for the uart will slow things down ... a lot
+// print a string on the polled uart, can be used with interrupts disabled
+// ... but the elapsed time waiting for the uart will slow things down a lot
 void kputs (const char* msg) {
-    auto& polled = (UartBufDev< PinA<9>, PinA<10> >::base&) console;
+    auto& polled = (decltype(console)::base&) console;
     while (*msg)
         polled.putc(*msg++);
 }
@@ -27,17 +25,32 @@ void panic (const char* msg) {
     while (1) {} // die
 }
 
+// set up and enabled the main fault handlers
+void enableFaultHandlers () {
+    VTableRam().hard_fault          = []() { panic("hard fault"); };
+    VTableRam().memory_manage_fault = []() { panic("mem fault"); };
+    VTableRam().bus_fault           = []() { panic("bus fault"); };
+    VTableRam().usage_fault         = []() { panic("usage fault"); };
+    *(uint32_t*) 0xE000ED24 |= 7<<16; // SCB->SHCSR |= (USG|BUS|MEM)FAULTENA
+}
+
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Task switcher, adapted from a superb example in Joseph Yiu's book, ch. 10:
 // "The Definitive Guide to Arm Cortex M3 and M4", 3rd edition, 2014.
 
 constexpr int MAX_TASKS = 4;
 uint32_t* PSP_array[MAX_TASKS]; // Process Stack Pointer for each task
-uint32_t curr_task;            // current task
-uint32_t next_task;            // next task
+uint32_t curr_task, next_task;  // index of current and next task
 
-void PendSV_Handler(void)
-{   // Context switching code - no floating point support
+void initTask (int index, void* stackTop, void (*func)()) {
+    uint32_t* psp = (uint32_t*) stackTop - 16;
+    psp[14] = (uint32_t) func; // initial PC
+    psp[15] = 0x01000000; // initial xPSR
+    PSP_array[index] = psp;
+}
+
+// context switcher,no floating point support
+void PendSV_Handler () {
     __asm volatile (" \n\
         // save current context \n\
         mrs    r0, psp      // get current process stack pointer value \n\
@@ -56,10 +69,10 @@ void PendSV_Handler(void)
     ");
 }
 
-void startTasking () {
+void startMultiTasker () {
     // prepare to run all tasks in unprivileged thread mode, with one PSP
     // stack per task, keeping the original main stack for MSP/handler use
-    uint32_t* psp = PSP_array[0];
+    uint32_t* psp = PSP_array[curr_task];
     asm volatile ("msr psp, %0\n" :: "r" (psp + 16));
 
     // PendSV will be used to switch stacks, at the lowest interrupt priority
@@ -72,14 +85,7 @@ void startTasking () {
     // launch task zero, running in unprivileged thread mode from now on
     ((void (*)()) psp[14])();
 
-    panic("task 0 exit");
-}
-
-void initTask (int index, void* stackTop, void (*func)()) {
-    uint32_t* psp = (uint32_t*) stackTop - 16;
-    psp[14] = (uint32_t) func; // initial PC
-    psp[15] = 0x01000000; // initial xPSR
-    PSP_array[index] = psp;
+    panic("main task exit");
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -87,14 +93,8 @@ void initTask (int index, void* stackTop, void (*func)()) {
 int main () {
     console.init();
     console.baud(115200, fullSpeedClock()/2);
-    led2.mode(Pinmode::out); led2 = 1; // inverted logic
-    led3.mode(Pinmode::out); led3 = 1; // inverted logic
+    enableFaultHandlers();
     wait_ms(200); // so PIO console has time to init
-
-    VTableRam().hard_fault          = []() { panic("hard fault"); };
-    VTableRam().bus_fault           = []() { panic("bus fault"); };
-    VTableRam().usage_fault         = []() { panic("usage fault"); };
-    VTableRam().memory_manage_fault = []() { panic("mem fault"); };
 
     // divider must stay below 16,777,216 (24-bit counter)
     // at 50 Hz, 32-bit ticks will roll over in 6.8 years
@@ -109,9 +109,11 @@ int main () {
 
     alignas(8) static uint8_t stack0 [1000];
     initTask(0, stack0 + sizeof stack0, []() {
+        PinA<6> led2;
+        led2.mode(Pinmode::out);
         while (true) {
             printf("%d\n", ticks);
-            led2 = 0;
+            led2 = 0; // inverted logic
             wait_ms(100/20);
             led2 = 1;
             wait_ms(900/20);
@@ -120,13 +122,15 @@ int main () {
 
     alignas(8) static uint8_t stack1 [1000];
     initTask(1, stack1 + sizeof stack1, []() {
+        PinA<7> led3;
+        led3.mode(Pinmode::out);
         while (true) {
-            led3 = 0;
+            led3 = 0; // inverted logic
             wait_ms(20/20);
             led3 = 1;
             wait_ms(250/20);
         }
     });
 
-    startTasking(); // start task 0, never returns
+    startMultiTasker(); // never returns
 }
