@@ -36,7 +36,6 @@ uint32_t* PSP_array[MAX_TASKS]; // Process Stack Pointer for each task
 uint32_t curr_task;            // current task
 uint32_t next_task;            // next task
 
-//__attribute__((naked))
 void PendSV_Handler(void)
 {   // Context switching code - no floating point support
     __asm volatile (" \n\
@@ -54,7 +53,6 @@ void PendSV_Handler(void)
         ldr    r0,[r3, r4, lsl #2] // Load PSP value from PSP_array \n\
         ldmia  r0!,{r4-r11} // load R4 to R11 from task stack (8 regs) \n\
         msr    psp, r0      // set PSP to next task \n\
-        bx     lr           // return \n\
     ");
 }
 
