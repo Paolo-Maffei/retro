@@ -49,7 +49,7 @@ void initTask (int index, void* stackTop, void (*func)()) {
     PSP_array[index] = psp;
 }
 
-// context switcher,no floating point support
+// context switcher, no floating point support
 void PendSV_Handler () {
     __asm volatile (" \n\
         // save current context \n\
@@ -87,6 +87,14 @@ void startMultiTasker () {
     panic("main task exit");
 }
 
+void changeTask (uint32_t index) {
+    // trigger a PendSV exception from thread mode to switch tasks
+    if (index != curr_task) {
+        next_task = index;
+        *(uint32_t*) 0xE000ED04 |= 1<<28; // SCB->ICSR |= PENDSVSET
+    }
+}
+
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 int main () {
@@ -96,15 +104,10 @@ int main () {
     initFaultHandlers();
     wait_ms(200); // give platformio's console time to connect
 
-    // divider must stay below 16,777,216 (24-bit counter)
-    // at 50 Hz, 32-bit ticks will roll over in 6.8 years
-    enableSysTick(hz/50); // 50 Hz
-
     VTableRam().systick = []() {
         ++ticks;
-        next_task = 1 - curr_task; // FIXME test: alternate between tasks 0 & 1
-        if (curr_task != next_task)
-            *(uint32_t*) 0xE000ED04 |= 1<<28; // SCB->ICSR |= PENDSVSET
+        if (ticks % 20 == 0)           // switch tasks every 20 ms
+            changeTask(1 - curr_task); // FIXME: alternate between tasks 0 & 1
     };
 
     alignas(8) static uint8_t stack0 [1000];
@@ -114,9 +117,9 @@ int main () {
         while (true) {
             printf("%d\n", ticks);
             led2 = 0; // inverted logic
-            wait_ms(100/20);
+            wait_ms(100);
             led2 = 1;
-            wait_ms(900/20);
+            wait_ms(900);
         }
     });
 
@@ -126,9 +129,9 @@ int main () {
         led3.mode(Pinmode::out);
         while (true) {
             led3 = 0; // inverted logic
-            wait_ms(20/20);
+            wait_ms(20);
             led3 = 1;
-            wait_ms(250/20);
+            wait_ms(260);
         }
     });
 
