@@ -152,7 +152,7 @@ int new_task(void *(*p)(void*), void * arg, void * stackaddr, int stack_size){
     hw_stack_frame_t* process_frame;
     //Disable context switching to support multi-threaded calls to this function
     ///systick_disable_irq();
-    __asm("cpsid if");
+    __asm("cpsid i");
     for(i=1; i < MAX_TASKS; i++){
         if( task_table[i].flags == 0 ){
             process_frame = (hw_stack_frame_t*) stackaddr - 1;
@@ -173,7 +173,7 @@ int new_task(void *(*p)(void*), void * arg, void * stackaddr, int stack_size){
         }
     }
     ///systick_enable_irq();  //Enable context switching
-    __asm("cpsie if");
+    __asm("cpsie i");
     if ( i == MAX_TASKS ){
         //New task could not be created
         return 0;
