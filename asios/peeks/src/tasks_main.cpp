@@ -1,7 +1,7 @@
 #include <jee.h>
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Console device and main kernel debugging.
+// Console device and exception handler debugging.
 
 UartBufDev< PinA<9>, PinA<10> > console;
 
@@ -22,7 +22,7 @@ void kputs (const char* msg) {
 void panic (const char* msg) {
     __asm("cpsid if"); // disable interrupts
     kputs("\n*** panic: "); kputs(msg); kputs(" ***\n");
-    while (1) {} // die
+    while (1) {} // hang
 }
 
 // set up and enable the main fault handlers
@@ -82,9 +82,8 @@ void startMultiTasker () {
     asm volatile ("msr control, %0\n" :: "r" (3)); // go to unprivileged mode
     asm volatile ("isb\n"); // memory barrier, not really needed on M3/M4
 
-    // launch task zero, running in unprivileged thread mode from now on
+    // launch main task, running in unprivileged thread mode from now on
     ((void (*)()) psp[14])();
-
     panic("main task exit");
 }
 
