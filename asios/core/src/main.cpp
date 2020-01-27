@@ -39,8 +39,8 @@ void initFaultHandlers () {
 // "The Definitive Guide to Arm Cortex M3 and M4", 3rd edition, 2014.
 
 constexpr int MAX_TASKS = 10;
-uint32_t* PSP_array[MAX_TASKS]; // Process Stack Pointer for each task
-uint32_t curr_task, next_task;  // index of current and next task
+uint32_t* pspVec[MAX_TASKS]; // Process Stack Pointers for each runnable task
+uint32_t currTask, nextTask; // index of current and next tasks
 
 struct HardwareStackFrame {
     uint32_t r[4], r12, lr, pc, psr;
@@ -50,7 +50,7 @@ void initTask (int index, void* stackTop, void (*func)()) {
     HardwareStackFrame* psp = (HardwareStackFrame*) stackTop - 1;
     psp->pc = (uint32_t) func;
     psp->psr = 0x01000000;
-    PSP_array[index] = (uint32_t*) psp - 8; // room for the extra registers
+    pspVec[index] = (uint32_t*) psp - 8; // room for the extra registers
 }
 
 // context switcher, no floating point support
@@ -59,15 +59,15 @@ void PendSV_Handler () {
         // save current context \n\
         mrs    r0, psp      // get current process stack pointer value \n\
         stmdb  r0!,{r4-r11} // save R4 to R11 in task stack (8 regs) \n\
-        ldr    r1,=curr_task \n\
+        ldr    r1,=currTask \n\
         ldr    r2,[r1]      // get current task ID \n\
-        ldr    r3,=PSP_array \n\
-        str    r0,[r3, r2, lsl #2] // save PSP value into PSP_array \n\
+        ldr    r3,=pspVec \n\
+        str    r0,[r3, r2, lsl #2] // save PSP value into pspVec \n\
         // load next context \n\
-        ldr    r4,=next_task \n\
+        ldr    r4,=nextTask \n\
         ldr    r4,[r4]      // get next task ID \n\
-        str    r4,[r1]      // set curr_task = next_task \n\
-        ldr    r0,[r3, r4, lsl #2] // Load PSP value from PSP_array \n\
+        str    r4,[r1]      // set currTask = nextTask \n\
+        ldr    r0,[r3, r4, lsl #2] // Load PSP value from pspVec \n\
         ldmia  r0!,{r4-r11} // load R4 to R11 from task stack (8 regs) \n\
         msr    psp, r0      // set PSP to next task \n\
     ");
@@ -76,7 +76,7 @@ void PendSV_Handler () {
 void startTasks () {
     // prepare to run all tasks in unprivileged thread mode, with one PSP
     // stack per task, keeping the original main stack for MSP/handler use
-    HardwareStackFrame* psp = (HardwareStackFrame*) (PSP_array[curr_task] + 8);
+    HardwareStackFrame* psp = (HardwareStackFrame*) (pspVec[currTask] + 8);
     asm volatile ("msr psp, %0\n" :: "r" (psp + 1));
 
     // PendSV will be used to switch stacks, at the lowest interrupt priority
@@ -92,15 +92,15 @@ void startTasks () {
 
 void changeTask (uint32_t index) {
     // trigger a PendSV when back in thread mode to switch tasks
-    next_task = index;
-    if (index != curr_task)
+    nextTask = index;
+    if (index != currTask)
         MMIO32(0xE000ED04) |= 1<<28; // SCB->ICSR |= PENDSVSET
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Generic zero-terminated list handling, all it needs is a "next" field.
 
-// return a value (of any type), setting the original to zero
+// copy a value (of any type), setting the original to zero
 template< typename T >
 T grab (T& x) {
     T r = x;
@@ -117,9 +117,21 @@ void listAppend (T*& list, T* item) {
     list = item;
 }
 
+// remove an item from a list
+template< typename T >
+bool listRemove (T*& list, T* item) {
+    while (list != item)
+        if (list != 0)
+            list = list->next;
+        else
+            return false;
+    list = grab(item->next);
+    return true;
+}
+
 // take the first item off a list, returns null if none
 template< typename T >
-T* listPull (T*& list) {
+T* listTakeFirst (T*& list) {
     T* item = list;
     if (item != 0)
         list = grab(item->next);
@@ -127,40 +139,80 @@ T* listPull (T*& list) {
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Tasks (with same index as PSP_array) and task management.
+// Tasks (with same index as pspVec) and task management.
 
 struct Task {
-    Task* next;
-    Task* pendingQueue;
-    Task* replyQueue;
-    uint32_t* stackPtr; // valid while suspended, i.e. not runnable
+    // pointers used during queued ipc sends
+    Task* blocking; // set while suspended, to the task where we're queued
+    Task* next;     // used in suspended tasks, currently on some linked list
+
+    // receive queues holding queued message sending tasks
+    Task* pendingQueue; // tasks waiting for their call to be accepted
+    Task* finishQueue;  // tasks waiting for their call to be completed
+
+    // everything below is for conveniently using tasks as C++ objects
+
+    enum State { Unused, Suspended, Runnable, Active };
+
+    uint32_t index () const { return this - taskVec; }
+    static Task& index (int num) { return taskVec[num]; }
+    static Task& current () { return taskVec[currTask]; }
+
+    State state () const {
+        uint32_t tidx = index();
+        // note: the current task *can* be suspended, in which case a task
+        // change will have been requested, and PendSV will be called asap
+        return pspVec[tidx] == 0 ? Unused
+                                 : blocking != 0 ? Suspended
+                                                 : tidx == currTask ? Active
+                                                                    : Runnable;
+    }
+
+    void suspend (Task* server) {
+        uint32_t tidx = index();
+        if (tidx == currTask) {
+            nextTask = nextRunnable();
+            if (nextTask == currTask)
+                panic("no runnable tasks left");
+            changeTask(nextTask); // will trigger PendSV tail-chaining
+        }
+        blocking = server;
+    }
+
+    void waitFor (Task& server, bool accepted) {
+        listAppend(accepted ? finishQueue : pendingQueue, this);
+        suspend(&server);
+    }
+
+    void resume () {
+        if (blocking != 0) { // might already be runnable
+            listRemove(blocking->pendingQueue, this); // must be in this one
+            listRemove(blocking->finishQueue, this);  // or else in this one
+            blocking = 0;
+        }
+    }
 
     static int nextRunnable () {
-        int t = curr_task;
+        int tidx = currTask;
         do
-            t = (t + 1) % MAX_TASKS;
-        while (PSP_array[t] == 0);
-        return t;
+            tidx = (tidx + 1) % MAX_TASKS;
+        while (Task::index(tidx).state() < Runnable);
+        return tidx;
     }
+
+private:
+    static Task taskVec [];
 };
 
-Task tasks [MAX_TASKS];
+Task Task::taskVec [MAX_TASKS];
 
-void suspend (uint32_t task) {
-    if (task == curr_task) {
-        next_task = Task::nextRunnable();
-        if (next_task == curr_task)
-            panic("no runnable tasks left");
-        // force a task switch now, before PSP_array[curr_task] is cleared
-        PendSV_Handler();
-    }
-    tasks[task].stackPtr = grab(PSP_array[task]);
-}
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Error numbers
 
-void waitOnList (Task*& list) {
-    listAppend(list, &tasks[curr_task]);
-    suspend(curr_task);
-}
+enum {
+    EOK,
+    ENOSYS,
+};
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Message-based IPC.
@@ -204,16 +256,12 @@ int syscall_ipcCall (HardwareStackFrame* fp) {
     int dest = fp->r[0];
     //Message* msg = (Message*) fp->r[1];
 
-    Task& receiver = tasks[dest];
+    Task& me = Task::current();
+    Task& receiver = Task::index(dest);
     int e = syscall_ipcSend(fp);
-    if (e == 0)
-        waitOnList(receiver.replyQueue); // msg accepted
-    else {
-        PSP_array[dest] = grab(tasks[dest].stackPtr);
-        waitOnList(receiver.pendingQueue); // msg not accepted
-    }
+    me.waitFor(receiver, e == 0);
     // ... what if the reply is already available?
-    // ... how to deal with return code, since we're now on another task!
+    // ... how to deal with return code, since we're now on another task
     return e;
 }
 
@@ -222,17 +270,17 @@ int syscall_ipcRecv (HardwareStackFrame* fp) {
     //int flags = fp->r[0];
     //Message* msg = (Message*) fp->r[1];
 
-    Task& me = tasks[curr_task];
+    Task& me = Task::current();
     Task* sender;
     while (1) {
-        sender = listPull(me.pendingQueue);
+        sender = listTakeFirst(me.pendingQueue);
         if (sender != 0)
             break;
-        suspend(curr_task);
+        me.suspend(0);
     }
 
     // ... copy message from sender to my message buffer
-    return sender - tasks;
+    return sender->index();
 }
 
 // used for testing
@@ -253,7 +301,7 @@ int (*const syscallVec[])(HardwareStackFrame*) = {
 // SVC system call interface, required to switch from thread to handler state.
 
 void initSystemCall () {
-    // let the C++11 compiler verify that the enum and vector size match
+    // use the compiler to verify that the syscall enum and vector size match
     static_assert(SYSCALL_MAX == sizeof syscallVec / sizeof *syscallVec);
 
     // allow SVC requests from thread state, but not from exception handlers
@@ -265,12 +313,15 @@ void initSystemCall () {
         HardwareStackFrame* psp;
         asm ("mrs %0, psp" : "=r" (psp));
         uint8_t req = ((uint8_t*) (psp->pc))[-2];
+#if 0
         printf("< svc.%d psp %08x r0.%d lr %08x pc %08x psr %08x >\n",
                 req, psp, psp->r[0], psp->lr, psp->pc, psp->psr);
-        if (req < SYSCALL_MAX)
-            psp->r[0] = syscallVec[req](psp);
-        else
-            panic("no such system call");
+#endif
+        // make pspVec[currTask] "resemble" a stack with full context XXX why?
+        // this is fiction, since r3..r11 (and fpregs) have *not* been saved
+        pspVec[currTask] = (uint32_t*) psp - 8;
+
+        psp->r[0] = req < SYSCALL_MAX ? syscallVec[req](psp) : -ENOSYS;
     };
 }
 
@@ -303,8 +354,8 @@ int main () {
 
     VTableRam().systick = []() {
         ++ticks;
-        if (ticks % 20 == 0)           // switch tasks every 20 ms
-            changeTask(1 - curr_task); // FIXME: alternate between tasks 0 & 1
+        if (ticks % 20 == 0)          // switch tasks every 20 ms
+            changeTask(1 - currTask); // FIXME alternate between tasks 0 & 1
     };
 
     alignas(8) static uint8_t stack0 [1000];
