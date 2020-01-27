@@ -318,15 +318,17 @@ void initSystemCall () {
                 req, psp, psp->r[0], psp->lr, psp->pc, psp->psr);
 #endif
         // make pspVec[currTask] "resemble" a stack with full context XXX why?
-        // this is fiction, since r3..r11 (and fpregs) have *not* been saved
+        // this is fiction, since r4..r11 (and fp regs) have *not* been saved
+        // note that pspVec[currTask] is redundant, the real psp is what counts
+        // now all valid pspVec entries have similar stack ptrs for kernel use
         pspVec[currTask] = (uint32_t*) psp - 8;
 
         psp->r[0] = req < SYSCALL_MAX ? syscallVec[req](psp) : -ENOSYS;
     };
 }
 
-/* During a system call, only *part* of the context is saved (r0 .. psr), the
-   remaining context (i.e. r4..r11 and opt. floating point) must be preserved.
+/* During a system call, only *part* of the context is saved (r0..psr), the
+   remaining context (i.e. r4..r11 and optional fp regs) need to be preserved.
    This is ok, as context switches only happen in PendSV, i.e. outside SVCs. */
 
 __attribute__((naked)) // avoid warning about missing return value
