@@ -96,6 +96,35 @@ void changeTask (uint32_t index) {
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// SVC system call interface, used to switch from thread to handler state.
+
+struct HardwareStackFrame {
+    uint32_t r[4], r12, lr, pc, psr;
+};
+
+void initSystemCall () {
+    // allow svc requests from thread state, but not from exception handlers
+    // kernel code can now be interrupted by most handlers (but not pend_sv)
+    *(uint8_t*) 0xE000ED1F = 0xFF; // SHPR2->PRI_11 = 0xFF
+
+    VTableRam().sv_call = []() {
+        HardwareStackFrame* psp;
+        __asm ("mrs %0, psp" : "=r" (psp));
+        printf("<%x: svc %d lr %x pc %x psr %x >\n",
+                &psp, ((uint8_t*) (psp->pc))[-2], psp->lr, psp->pc, psp->psr);
+        int r = 0;
+        for (int i = 0; i < 4; ++i)
+            r += psp->r[i];
+        psp->r[0] = r;
+    };
+}
+
+__attribute__((naked)) // avoid warning about missing return value
+int syscall (...) {
+    __asm volatile ("svc #0; bx lr");
+}
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 int main () {
     const auto hz = fullSpeedClock();
@@ -109,6 +138,8 @@ int main () {
         if (ticks % 20 == 0)           // switch tasks every 20 ms
             changeTask(1 - curr_task); // FIXME: alternate between tasks 0 & 1
     };
+
+    initSystemCall();
 
     alignas(8) static uint8_t stack0 [1000];
     initTask(0, stack0 + sizeof stack0, []() {
@@ -132,6 +163,9 @@ int main () {
             wait_ms(20);
             led3 = 1;
             wait_ms(260);
+            int n = syscall(11, 22, 33, 44);
+            if (n != 11 + 22 + 33 + 44)
+                printf("n? %d\n", n);
         }
     });
 
