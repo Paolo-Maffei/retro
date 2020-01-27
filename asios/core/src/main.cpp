@@ -218,6 +218,39 @@ enum {
 // Message-based IPC.
 
 struct Message {
+    int request;
+
+    // non-blocking message send, behaves as atomic test-and-set
+    int send (int src, int dst) {
+        // ... all args valid, can now handle the request
+        return -1;
+    }
+
+    // blocking send + receive, used for most request/reply exchanges
+    int call (int src, int dst) {
+        // ... all args valid, can now handle the request
+        Task& receiver = Task::index(dst);
+        int e = send(src, dst);
+        Task::index(src).waitFor(receiver, e == EOK);
+        // ... what if the reply is already available?
+        // ... how to deal with return code, since we're now on another task
+        return e;
+    }
+
+    // blocking receive, used by drivers and servers
+    int recv (int dst, int flags) {
+        // ... all args valid, can now handle the request
+        Task& receiver = Task::index(dst);
+        Task* sender;
+        while (1) {
+            sender = listTakeFirst(receiver.pendingQueue);
+            if (sender != 0)
+                break;
+            receiver.suspend(0);
+        }
+        // ... copy message from sender to my message buffer
+        return sender->index();
+    }
 };
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -237,53 +270,34 @@ enum {
     { asm ("svc %0; bx lr" :: "i" (SYSCALL_ ## name)); }
 
 // these are all the system call stubs
-SYSCALL_STUB(ipcSend, (int dest, Message* msg))
-SYSCALL_STUB(ipcCall, (int dest, Message* msg))
-SYSCALL_STUB(ipcRecv, (int flags, int* srcp, Message* msg))
+SYSCALL_STUB(ipcSend, (int dst, Message* msg))
+SYSCALL_STUB(ipcCall, (int dst, Message* msg))
+SYSCALL_STUB(ipcRecv, (int flags, Message* msg))
 SYSCALL_STUB(demo, (int a, int b, int c, int d))
 
 // TODO move everything up to the above enum to a C header for use in tasks
 
-// non-blocking message send (behaves as atomic test-and-set)
 int syscall_ipcSend (HardwareStackFrame* fp) {
-    //int dest = fp->r[0];
-    //Message* msg = (Message*) fp->r[1];
-    return -1;
+    int dst = fp->r[0];
+    Message* msg = (Message*) fp->r[1];
+    // ... validate dst and msg
+    return msg->send(currTask, dst);
 }
 
-// blocking send + receive, used for most request/reply exchanges
 int syscall_ipcCall (HardwareStackFrame* fp) {
-    int dest = fp->r[0];
-    //Message* msg = (Message*) fp->r[1];
-
-    Task& me = Task::current();
-    Task& receiver = Task::index(dest);
-    int e = syscall_ipcSend(fp);
-    me.waitFor(receiver, e == 0);
-    // ... what if the reply is already available?
-    // ... how to deal with return code, since we're now on another task
-    return e;
+    int dst = fp->r[0];
+    Message* msg = (Message*) fp->r[1];
+    // ... validate dst and msg
+    return msg->call(currTask, dst);
 }
 
-// block receive, used by drivers and servers
 int syscall_ipcRecv (HardwareStackFrame* fp) {
-    //int flags = fp->r[0];
-    //Message* msg = (Message*) fp->r[1];
-
-    Task& me = Task::current();
-    Task* sender;
-    while (1) {
-        sender = listTakeFirst(me.pendingQueue);
-        if (sender != 0)
-            break;
-        me.suspend(0);
-    }
-
-    // ... copy message from sender to my message buffer
-    return sender->index();
+    int flags = fp->r[0];
+    Message* msg = (Message*) fp->r[1];
+    // ... validate flags and msg
+    return msg->recv(currTask, flags);
 }
 
-// used for testing
 int syscall_demo (HardwareStackFrame* fp) {
     printf("< demo %d %d %d %d >\n", fp->r[0], fp->r[1], fp->r[2], fp->r[3]);
     return fp->r[0] + fp->r[1] + fp->r[2] + fp->r[3];
@@ -357,11 +371,14 @@ int main () {
     VTableRam().systick = []() {
         ++ticks;
         if (ticks % 20 == 0)          // switch tasks every 20 ms
-            changeTask(1 - currTask); // FIXME alternate between tasks 0 & 1
+            changeTask(Task::nextRunnable());
     };
 
-    alignas(8) static uint8_t stack0 [1000];
-    initTask(0, stack0 + sizeof stack0, []() {
+#define DEFINE_TASK(index, stacksize, body) \
+    alignas(8) static uint8_t stack_##index [stacksize]; \
+    initTask(index, stack_##index + stacksize, []() { body });
+
+    DEFINE_TASK(0, 1000,
         PinA<6> led2;
         led2.mode(Pinmode::out);
         while (true) {
@@ -371,10 +388,9 @@ int main () {
             led2 = 1;
             wait_ms(900);
         }
-    });
+    )
 
-    alignas(8) static uint8_t stack1 [1000];
-    initTask(1, stack1 + sizeof stack1, []() {
+    DEFINE_TASK(1, 1000,
         PinA<7> led3;
         led3.mode(Pinmode::out);
         while (true) {
@@ -386,7 +402,31 @@ int main () {
             if (n != 11 + 22 + 33 + 44)
                 printf("n? %d\n", n);
         }
-    });
+    )
+
+#if 0
+    DEFINE_TASK(2, 1000,
+        wait_ms(2700);
+        static Message msg; // XXX static for now
+        while (ipcRecv(0, &msg) == 0)
+            printf("2: received %d\n", msg.request);
+        panic("receiver has quit");
+    )
+#endif
+#if 1
+    DEFINE_TASK(3, 1000,
+        wait_ms(2800);
+        static Message msg; // XXX static for now
+        //memset(&msg, 0, sizeof msg);
+        while (1) {
+            printf("3: sending %d\n", ++msg.request);
+            int e = ipcSend(2, &msg);
+            if (e != 0)
+                printf("send? %d\n", e);
+            wait_ms(1500);
+        }
+    )
+#endif
 
     startTasks(); // never returns
 }
