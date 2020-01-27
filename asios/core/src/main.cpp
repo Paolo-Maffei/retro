@@ -31,7 +31,7 @@ void initFaultHandlers () {
     VTableRam().memory_manage_fault = []() { panic("mem fault"); };
     VTableRam().bus_fault           = []() { panic("bus fault"); };
     VTableRam().usage_fault         = []() { panic("usage fault"); };
-    *(uint32_t*) 0xE000ED24 |= 7<<16; // SCB->SHCSR |= (USG|BUS|MEM)FAULTENA
+    MMIO32(0xE000ED24) |= 0b111<<16; // SCB->SHCSR |= (USG|BUS|MEM)FAULTENA
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -80,7 +80,7 @@ void startTasks () {
     asm volatile ("msr psp, %0\n" :: "r" (psp + 1));
 
     // PendSV will be used to switch stacks, at the lowest interrupt priority
-    *(uint8_t*) 0xE000ED22 = 0xFF; // SHPR3->PRI_14 = 0xFF
+    MMIO8(0xE000ED22) = 0xFF; // SHPR3->PRI_14 = 0xFF
     VTableRam().pend_sv = PendSV_Handler;
 
     asm volatile ("msr control, %0; isb" :: "r" (3)); // to unprivileged mode
@@ -94,7 +94,7 @@ void changeTask (uint32_t index) {
     // trigger a PendSV when back in thread mode to switch tasks
     next_task = index;
     if (index != curr_task)
-        *(uint32_t*) 0xE000ED04 |= 1<<28; // SCB->ICSR |= PENDSVSET
+        MMIO32(0xE000ED04) |= 1<<28; // SCB->ICSR |= PENDSVSET
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -128,7 +128,7 @@ SYSCALL_STUB(demo, (int a, int b, int c, int d))
 // TODO move everything up to the above enum to a C header for use in tasks
 
 int syscall_ipcSend (HardwareStackFrame* fp) {
-    // ... non-blocking message send (behaves like an atomic test-and-set)
+    // ... non-blocking message send (behaves as atomic test-and-set)
     return -1;
 }
 
@@ -155,8 +155,8 @@ int syscall_demo (HardwareStackFrame* fp) {
 
 // these stubs must match the exact order and number of SYSCALL_* enums
 int (*const syscallVec[])(HardwareStackFrame*) = {
-    syscall_ipcCall,
     syscall_ipcSend,
+    syscall_ipcCall,
     syscall_ipcRecv,
     syscall_demo,
 };
@@ -171,7 +171,7 @@ void initSystemCall () {
     // allow SVC requests from thread state, but not from exception handlers
     // (a SVC which can't be serviced right away will generate a hard fault)
     // kernel code can now be interrupted by most handlers other than PendSV
-    *(uint8_t*) 0xE000ED1F = 0xFF; // SHPR2->PRI_11 = 0xFF
+    MMIO8(0xE000ED1F) = 0xFF; // SHPR2->PRI_11 = 0xFF
 
     VTableRam().sv_call = []() {
         HardwareStackFrame* psp;
@@ -179,9 +179,10 @@ void initSystemCall () {
         uint8_t req = ((uint8_t*) (psp->pc))[-2];
         printf("< svc.%d psp %08x r0.%d lr %08x pc %08x psr %08x >\n",
                 req, psp, psp->r[0], psp->lr, psp->pc, psp->psr);
-        if (req >= SYSCALL_MAX || syscallVec[req] == 0)
+        if (req < SYSCALL_MAX)
+            psp->r[0] = syscallVec[req](psp);
+        else
             panic("no such system call");
-        psp->r[0] = syscallVec[req](psp);
     };
 }
 
