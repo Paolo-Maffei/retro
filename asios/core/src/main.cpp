@@ -20,7 +20,7 @@ void kputs (const char* msg) {
 
 // give up, but not before trying to send a final message to the console port
 void panic (const char* msg) {
-    __asm("cpsid if"); // disable interrupts
+    asm ("cpsid if"); // disable interrupts and faults
     kputs("\n*** panic: "); kputs(msg); kputs(" ***\n");
     while (1) {} // hang
 }
@@ -55,16 +55,16 @@ void initTask (int index, void* stackTop, void (*func)()) {
 
 // context switcher, no floating point support
 void PendSV_Handler () {
-    __asm volatile (" \n\
+    asm volatile ("\
         // save current context \n\
         mrs    r0, psp      // get current process stack pointer value \n\
         stmdb  r0!,{r4-r11} // save R4 to R11 in task stack (8 regs) \n\
-        ldr    r1,=(curr_task) \n\
+        ldr    r1,=curr_task \n\
         ldr    r2,[r1]      // get current task ID \n\
-        ldr    r3,=(PSP_array) \n\
+        ldr    r3,=PSP_array \n\
         str    r0,[r3, r2, lsl #2] // save PSP value into PSP_array \n\
         // load next context \n\
-        ldr    r4,=(next_task) \n\
+        ldr    r4,=next_task \n\
         ldr    r4,[r4]      // get next task ID \n\
         str    r4,[r1]      // set curr_task = next_task \n\
         ldr    r0,[r3, r4, lsl #2] // Load PSP value from PSP_array \n\
@@ -73,7 +73,7 @@ void PendSV_Handler () {
     ");
 }
 
-void startMultiTasker () {
+void startTasks () {
     // prepare to run all tasks in unprivileged thread mode, with one PSP
     // stack per task, keeping the original main stack for MSP/handler use
     HardwareStackFrame* psp = (HardwareStackFrame*) (PSP_array[curr_task] + 8);
@@ -83,8 +83,7 @@ void startMultiTasker () {
     *(uint8_t*) 0xE000ED22 = 0xFF; // SHPR3->PRI_14 = 0xFF
     VTableRam().pend_sv = PendSV_Handler;
 
-    asm volatile ("msr control, %0\n" :: "r" (3)); // go to unprivileged mode
-    asm volatile ("isb\n"); // memory barrier, not really needed on M3/M4
+    asm volatile ("msr control, %0; isb" :: "r" (3)); // to unprivileged mode
 
     // launch main task, running in unprivileged thread mode from now on
     ((void (*)()) psp->pc)();
@@ -92,15 +91,14 @@ void startMultiTasker () {
 }
 
 void changeTask (uint32_t index) {
-    // trigger a PendSV exception from thread mode to switch tasks
-    if (index != curr_task) {
-        next_task = index;
+    // trigger a PendSV when back in thread mode to switch tasks
+    next_task = index;
+    if (index != curr_task)
         *(uint32_t*) 0xE000ED04 |= 1<<28; // SCB->ICSR |= PENDSVSET
-    }
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// SVC system call interface, used to switch from thread to handler state.
+// SVC system call interface, required to switch from thread to handler state.
 
 void initSystemCall () {
     // allow SVC requests from thread state, but not from exception handlers
@@ -110,9 +108,11 @@ void initSystemCall () {
 
     VTableRam().sv_call = []() {
         HardwareStackFrame* psp;
-        __asm ("mrs %0, psp" : "=r" (psp));
-        printf("< svc %d psp 0x%08x lr 0x%08x pc 0x%08x psr 0x%08x >\n",
-                ((uint8_t*) (psp->pc))[-2], psp, psp->lr, psp->pc, psp->psr);
+        asm ("mrs %0, psp" : "=r" (psp));
+        uint8_t req = ((uint8_t*) (psp->pc))[-2];
+        printf("< svc.%d psp %08x r0.%d lr %08x pc %08x psr %08x >\n",
+                req, psp, psp->r[0], psp->lr, psp->pc, psp->psr);
+        // TODO replace following demo code
         int r = 0;
         for (int i = 0; i < 4; ++i)
             r += psp->r[i];
@@ -126,14 +126,14 @@ void initSystemCall () {
 
 __attribute__((naked)) // avoid warning about missing return value
 int syscall (...) {
-    __asm volatile ("svc #0; bx lr");
+    asm volatile ("svc #0; bx lr");
 }
 
 // system calls using a compile-time configurable "SVC #N" (only works in C++)
 template <int N>
 __attribute__((naked)) // avoid warning about missing return value
 int syscall (...) {
-    __asm volatile ("svc %0; bx lr" :: "i" (N));
+    asm volatile ("svc %0; bx lr" :: "i" (N));
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -181,5 +181,5 @@ int main () {
         }
     });
 
-    startMultiTasker(); // never returns
+    startTasks(); // never returns
 }
