@@ -38,7 +38,7 @@ void initFaultHandlers () {
 // Task switcher, adapted from a superb example in Joseph Yiu's book, ch. 10:
 // "The Definitive Guide to Arm Cortex M3 and M4", 3rd edition, 2014.
 
-constexpr int MAX_TASKS = 4;
+constexpr int MAX_TASKS = 10;
 uint32_t* PSP_array[MAX_TASKS]; // Process Stack Pointer for each task
 uint32_t curr_task, next_task;  // index of current and next task
 
@@ -98,6 +98,71 @@ void changeTask (uint32_t index) {
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Generic zero-terminated list handling, all it needs is a "next" field.
+
+// return a value (of any type), setting the original to zero
+template< typename T >
+T grab (T& x) {
+    T r = x;
+    x = 0;
+    return r;
+}
+
+// append an item to the end of a list
+template< typename T >
+void listAppend (T*& list, T* item) {
+    item->next = 0; // just to be safe
+    while (list != 0)
+        list = list->next;
+    list = item;
+}
+
+// take the first item off a list, returns null if none
+template< typename T >
+T* listPull (T*& list) {
+    T* item = list;
+    if (item != 0)
+        list = grab(item->next);
+    return item;
+}
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Tasks (with same index as PSP_array) and task management.
+
+struct Task {
+    Task* next;
+    Task* pendingQueue;
+    Task* replyQueue;
+    uint32_t* stackPtr; // valid while suspended, i.e. not runnable
+
+    static int nextRunnable () {
+        int t = curr_task;
+        do
+            t = (t + 1) % MAX_TASKS;
+        while (PSP_array[t] == 0);
+        return t;
+    }
+};
+
+Task tasks [MAX_TASKS];
+
+void suspend (uint32_t task) {
+    if (task == curr_task) {
+        next_task = Task::nextRunnable();
+        if (next_task == curr_task)
+            panic("no runnable tasks left");
+        // force a task switch now, before PSP_array[curr_task] is cleared
+        PendSV_Handler();
+    }
+    tasks[task].stackPtr = grab(PSP_array[task]);
+}
+
+void waitOnList (Task*& list) {
+    listAppend(list, &tasks[curr_task]);
+    suspend(curr_task);
+}
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Message-based IPC.
 
 struct Message {
@@ -120,31 +185,54 @@ enum {
     { asm ("svc %0; bx lr" :: "i" (SYSCALL_ ## name)); }
 
 // these are all the system call stubs
-SYSCALL_STUB(ipcSend, (int dest, int req, Message* msg))
-SYSCALL_STUB(ipcCall, (int dest, int req, Message* msg))
-SYSCALL_STUB(ipcRecv, (int flags, int* destp, int* reqp, Message* msg))
+SYSCALL_STUB(ipcSend, (int dest, Message* msg))
+SYSCALL_STUB(ipcCall, (int dest, Message* msg))
+SYSCALL_STUB(ipcRecv, (int flags, int* srcp, Message* msg))
 SYSCALL_STUB(demo, (int a, int b, int c, int d))
 
 // TODO move everything up to the above enum to a C header for use in tasks
 
+// non-blocking message send (behaves as atomic test-and-set)
 int syscall_ipcSend (HardwareStackFrame* fp) {
-    // ... non-blocking message send (behaves as atomic test-and-set)
+    //int dest = fp->r[0];
+    //Message* msg = (Message*) fp->r[1];
     return -1;
 }
 
+// blocking send + receive, used for most request/reply exchanges
 int syscall_ipcCall (HardwareStackFrame* fp) {
+    int dest = fp->r[0];
+    //Message* msg = (Message*) fp->r[1];
+
+    Task& receiver = tasks[dest];
     int e = syscall_ipcSend(fp);
-    if (e == 0) {
-        // ... msg accepted, put me on completion queue to wait for reply
-    } else {
-        // ... msg not accepted, put me on waiting queue until server is ready
+    if (e == 0)
+        waitOnList(receiver.replyQueue); // msg accepted
+    else {
+        PSP_array[dest] = grab(tasks[dest].stackPtr);
+        waitOnList(receiver.pendingQueue); // msg not accepted
     }
+    // ... what if the reply is already available?
+    // ... how to deal with return code, since we're now on another task!
     return e;
 }
 
+// block receive, used by drivers and servers
 int syscall_ipcRecv (HardwareStackFrame* fp) {
-    // ... suspend process until there is an incoming message
-    return -1;
+    //int flags = fp->r[0];
+    //Message* msg = (Message*) fp->r[1];
+
+    Task& me = tasks[curr_task];
+    Task* sender;
+    while (1) {
+        sender = listPull(me.pendingQueue);
+        if (sender != 0)
+            break;
+        suspend(curr_task);
+    }
+
+    // ... copy message from sender to my message buffer
+    return sender - tasks;
 }
 
 // used for testing
@@ -196,7 +284,7 @@ int syscall (...) {
 }
 
 // system calls using a compile-time configurable "SVC #N" (only works in C++)
-template <int N>
+template< int N >
 __attribute__((naked)) // avoid warning about missing return value
 int syscall (...) {
     asm volatile ("svc %0; bx lr" :: "i" (N));
