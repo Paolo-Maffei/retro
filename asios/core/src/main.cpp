@@ -5,21 +5,21 @@
 
 UartBufDev< PinA<9>, PinA<10> > console;
 
-int printf (const char* fmt, ...) {
+int printf (char const* fmt, ...) {
     va_list ap; va_start(ap, fmt); veprintf(console.putc, fmt, ap); va_end(ap);
     return 0;
 }
 
 // print a string on the polled uart, can be used with interrupts disabled
 // ... but the elapsed time waiting for the uart will slow things down a lot
-void kputs (const char* msg) {
+void kputs (char const* msg) {
     auto& polled = (decltype(console)::base&) console;
     while (*msg)
         polled.putc(*msg++);
 }
 
 // give up, but not before trying to send a final message to the console port
-void panic (const char* msg) {
+void panic (char const* msg) {
     asm ("cpsid if"); // disable interrupts and faults
     kputs("\n*** panic: "); kputs(msg); kputs(" ***\n");
     while (1) {} // hang
@@ -98,9 +98,76 @@ void changeTask (uint32_t index) {
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Message-based IPC.
+
+struct Message {
+};
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// System call handlers and dispatch vector.
+
+enum {
+    SYSCALL_ipcSend,
+    SYSCALL_ipcCall,
+    SYSCALL_ipcRecv,
+    SYSCALL_demo,
+    SYSCALL_MAX
+};
+
+// helper to define system call stubs with up to 4 typed arguments
+#define SYSCALL_STUB(name, args) \
+    __attribute__((naked)) int name args \
+    { asm ("svc %0; bx lr" :: "i" (SYSCALL_ ## name)); }
+
+// these are all the system call stubs
+SYSCALL_STUB(ipcSend, (int dest, int req, Message* msg))
+SYSCALL_STUB(ipcCall, (int dest, int req, Message* msg))
+SYSCALL_STUB(ipcRecv, (int flags, int* destp, int* reqp, Message* msg))
+SYSCALL_STUB(demo, (int a, int b, int c, int d))
+
+// TODO move everything up to the above enum to a C header for use in tasks
+
+int syscall_ipcSend (HardwareStackFrame* fp) {
+    // ... non-blocking message send (behaves like an atomic test-and-set)
+    return -1;
+}
+
+int syscall_ipcCall (HardwareStackFrame* fp) {
+    int e = syscall_ipcSend(fp);
+    if (e == 0) {
+        // ... msg accepted, put me on completion queue to wait for reply
+    } else {
+        // ... msg not accepted, put me on waiting queue until server is ready
+    }
+    return e;
+}
+
+int syscall_ipcRecv (HardwareStackFrame* fp) {
+    // ... suspend process until there is an incoming message
+    return -1;
+}
+
+// used for testing
+int syscall_demo (HardwareStackFrame* fp) {
+    printf("< demo %d %d %d %d >\n", fp->r[0], fp->r[1], fp->r[2], fp->r[3]);
+    return fp->r[0] + fp->r[1] + fp->r[2] + fp->r[3];
+}
+
+// these stubs must match the exact order and number of SYSCALL_* enums
+int (*const syscallVec[])(HardwareStackFrame*) = {
+    syscall_ipcCall,
+    syscall_ipcSend,
+    syscall_ipcRecv,
+    syscall_demo,
+};
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // SVC system call interface, required to switch from thread to handler state.
 
 void initSystemCall () {
+    // let the C++11 compiler verify that the enum and vector size match
+    static_assert(SYSCALL_MAX == sizeof syscallVec / sizeof *syscallVec);
+
     // allow SVC requests from thread state, but not from exception handlers
     // (a SVC which can't be serviced right away will generate a hard fault)
     // kernel code can now be interrupted by most handlers other than PendSV
@@ -112,17 +179,15 @@ void initSystemCall () {
         uint8_t req = ((uint8_t*) (psp->pc))[-2];
         printf("< svc.%d psp %08x r0.%d lr %08x pc %08x psr %08x >\n",
                 req, psp, psp->r[0], psp->lr, psp->pc, psp->psr);
-        // TODO replace following demo code
-        int r = 0;
-        for (int i = 0; i < 4; ++i)
-            r += psp->r[i];
-        psp->r[0] = r;
+        if (req >= SYSCALL_MAX || syscallVec[req] == 0)
+            panic("no such system call");
+        psp->r[0] = syscallVec[req](psp);
     };
 }
 
-// During a system call, only *part* of the context is saved (r0 .. psr), the
-// remaining context (i.e. r4..r11 and opt. floating point) must be preserved.
-// This is ok, since context switches only happen in PendSV, i.e. outside SVCs.
+/* During a system call, only *part* of the context is saved (r0 .. psr), the
+   remaining context (i.e. r4..r11 and opt. floating point) must be preserved.
+   This is ok, as context switches only happen in PendSV, i.e. outside SVCs. */
 
 __attribute__((naked)) // avoid warning about missing return value
 int syscall (...) {
@@ -175,7 +240,7 @@ int main () {
             wait_ms(20);
             led3 = 1;
             wait_ms(260);
-            int n = syscall<42>(11, 22, 33, 44);
+            int n = demo(11, 22, 33, 44);
             if (n != 11 + 22 + 33 + 44)
                 printf("n? %d\n", n);
         }
