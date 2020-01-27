@@ -8,10 +8,7 @@
 /* Entry Point */
 ENTRY(Reset_Handler)
 
-/* Highest address of the user mode stack */ 
-_estack = 0x20020000;    /* end of SRAM2 */
-/* Generate a link error if heap and stack don't fit into RAM */
-_Min_Heap_Size = 0x200;      /* required amount of heap  */
+/* Generate a link error if stack doesn't fit into RAM */
 _Min_Stack_Size = 0x400;     /* required amount of stack */
 
 /* Specify the memory areas */
@@ -20,6 +17,9 @@ MEMORY
     SRAM2 (xrw)     : ORIGIN = 0x2001C000, LENGTH = 16K
     FLASH (rx)      : ORIGIN = 0x08000000, LENGTH = 512K
 }
+
+/* Highest address of the user mode stack */ 
+_estack = ORIGIN(SRAM2) + LENGTH(SRAM2);
 
 /* Define output sections */
 SECTIONS
@@ -123,12 +123,9 @@ SECTIONS
     . = ALIGN(4);
     PROVIDE ( end = . );
     PROVIDE ( _end = . );
-    . = . + _Min_Heap_Size;
     . = . + _Min_Stack_Size;
     . = ALIGN(4);
   } >SRAM2
-
-  
 
   /* Remove information from the standard libraries */
   /DISCARD/ :
@@ -140,5 +137,3 @@ SECTIONS
 
   .ARM.attributes 0 : { *(.ARM.attributes) }
 }
-
-
