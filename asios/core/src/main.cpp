@@ -26,7 +26,7 @@ void panic (char const* msg) {
 }
 
 // set up and enable the main fault handlers
-void initFaultHandlers () {
+void setupFaultHandlers () {
     VTableRam().hard_fault          = []() { panic("hard fault"); };
     VTableRam().memory_manage_fault = []() { panic("mem fault"); };
     VTableRam().bus_fault           = []() { panic("bus fault"); };
@@ -223,7 +223,12 @@ struct Message {
     // non-blocking message send, behaves as atomic test-and-set
     int send (int src, int dst) {
         // ... all args valid, can now handle the request
-        return -1;
+        Task& receiver = Task::index(dst);
+        if (receiver.state() != Task::Suspended)
+            return -1;
+        receiver.blocking = 0;
+        listAppend(receiver.pendingQueue, &Task::index(src));
+        return 0;
     }
 
     // blocking send + receive, used for most request/reply exchanges
@@ -314,7 +319,7 @@ int (*const syscallVec[])(HardwareStackFrame*) = {
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // SVC system call interface, required to switch from thread to handler state.
 
-void initSystemCall () {
+void setupSystemCalls () {
     // use the compiler to verify that the syscall enum and vector size match
     static_assert(SYSCALL_MAX == sizeof syscallVec / sizeof *syscallVec);
 
@@ -365,12 +370,12 @@ int main () {
     console.baud(115200, hz/2);
     wait_ms(200); // give platformio's console time to connect
 
-    initFaultHandlers();
-    initSystemCall();
+    setupFaultHandlers();
+    setupSystemCalls();
 
     VTableRam().systick = []() {
         ++ticks;
-        if (ticks % 20 == 0)          // switch tasks every 20 ms
+        if (ticks % 20 == 0) // switch tasks every 20 ms
             changeTask(Task::nextRunnable());
     };
 
@@ -404,25 +409,29 @@ int main () {
         }
     )
 
-#if 0
+#if 1
     DEFINE_TASK(2, 1000,
         wait_ms(2700);
         static Message msg; // XXX static for now
-        while (ipcRecv(0, &msg) == 0)
-            printf("2: received %d\n", msg.request);
+        while (1) {
+            int src = ipcRecv(0, &msg);
+            if (src < 0)
+                break;
+            printf("2: received %d from %d\n", msg.request, src);
+        }
         panic("receiver has quit");
     )
 #endif
-#if 1
+#if 0
     DEFINE_TASK(3, 1000,
-        wait_ms(2800);
+        wait_ms(3000);
         static Message msg; // XXX static for now
         //memset(&msg, 0, sizeof msg);
         while (1) {
             printf("3: sending %d\n", ++msg.request);
             int e = ipcSend(2, &msg);
             if (e != 0)
-                printf("send? %d\n", e);
+                printf("3: send? %d\n", e);
             wait_ms(1500);
         }
     )
