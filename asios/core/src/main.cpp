@@ -42,11 +42,15 @@ constexpr int MAX_TASKS = 4;
 uint32_t* PSP_array[MAX_TASKS]; // Process Stack Pointer for each task
 uint32_t curr_task, next_task;  // index of current and next task
 
+struct HardwareStackFrame {
+    uint32_t r[4], r12, lr, pc, psr;
+};
+
 void initTask (int index, void* stackTop, void (*func)()) {
-    uint32_t* psp = (uint32_t*) stackTop - 16;
-    psp[14] = (uint32_t) func; // initial PC
-    psp[15] = 0x01000000; // initial xPSR
-    PSP_array[index] = psp;
+    HardwareStackFrame* psp = (HardwareStackFrame*) stackTop - 1;
+    psp->pc = (uint32_t) func;
+    psp->psr = 0x01000000;
+    PSP_array[index] = (uint32_t*) psp - 8; // room for the extra registers
 }
 
 // context switcher, no floating point support
@@ -72,8 +76,8 @@ void PendSV_Handler () {
 void startMultiTasker () {
     // prepare to run all tasks in unprivileged thread mode, with one PSP
     // stack per task, keeping the original main stack for MSP/handler use
-    uint32_t* psp = PSP_array[curr_task];
-    asm volatile ("msr psp, %0\n" :: "r" (psp + 16));
+    HardwareStackFrame* psp = (HardwareStackFrame*) (PSP_array[curr_task] + 8);
+    asm volatile ("msr psp, %0\n" :: "r" (psp + 1));
 
     // PendSV will be used to switch stacks, at the lowest interrupt priority
     *(uint8_t*) 0xE000ED22 = 0xFF; // SHPR3->PRI_14 = 0xFF
@@ -83,7 +87,7 @@ void startMultiTasker () {
     asm volatile ("isb\n"); // memory barrier, not really needed on M3/M4
 
     // launch main task, running in unprivileged thread mode from now on
-    ((void (*)()) psp[14])();
+    ((void (*)()) psp->pc)();
     panic("main task exit");
 }
 
@@ -98,26 +102,27 @@ void changeTask (uint32_t index) {
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // SVC system call interface, used to switch from thread to handler state.
 
-struct HardwareStackFrame {
-    uint32_t r[4], r12, lr, pc, psr;
-};
-
 void initSystemCall () {
-    // allow svc requests from thread state, but not from exception handlers
-    // kernel code can now be interrupted by most handlers (but not pend_sv)
+    // allow SVC requests from thread state, but not from exception handlers
+    // (a SVC which can't be serviced right away will generate a hard fault)
+    // kernel code can now be interrupted by most handlers (but not PendSV)
     *(uint8_t*) 0xE000ED1F = 0xFF; // SHPR2->PRI_11 = 0xFF
 
     VTableRam().sv_call = []() {
         HardwareStackFrame* psp;
         __asm ("mrs %0, psp" : "=r" (psp));
-        printf("<%x: svc %d lr %x pc %x psr %x >\n",
-                &psp, ((uint8_t*) (psp->pc))[-2], psp->lr, psp->pc, psp->psr);
+        printf("< svc %d psp 0x%08x lr 0x%08x pc 0x%08x psr 0x%08x >\n",
+                ((uint8_t*) (psp->pc))[-2], psp, psp->lr, psp->pc, psp->psr);
         int r = 0;
         for (int i = 0; i < 4; ++i)
             r += psp->r[i];
         psp->r[0] = r;
     };
 }
+
+// During a system call, only *part* of the context is saved (r0 .. psr), the
+// remaining context (i.e. r4..r11 and opt. floating point) must be preserved.
+// This is ok, since context switches only happen in PendSV, i.e. outside SVCs.
 
 __attribute__((naked)) // avoid warning about missing return value
 int syscall (...) {
