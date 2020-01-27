@@ -105,7 +105,7 @@ void changeTask (uint32_t index) {
 void initSystemCall () {
     // allow SVC requests from thread state, but not from exception handlers
     // (a SVC which can't be serviced right away will generate a hard fault)
-    // kernel code can now be interrupted by most handlers (but not PendSV)
+    // kernel code can now be interrupted by most handlers other than PendSV
     *(uint8_t*) 0xE000ED1F = 0xFF; // SHPR2->PRI_11 = 0xFF
 
     VTableRam().sv_call = []() {
@@ -129,22 +129,29 @@ int syscall (...) {
     __asm volatile ("svc #0; bx lr");
 }
 
+// system calls using a compile-time configurable "SVC #N" (only works in C++)
+template <int N>
+__attribute__((naked)) // avoid warning about missing return value
+int syscall (...) {
+    __asm volatile ("svc %0; bx lr" :: "i" (N));
+}
+
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 int main () {
     const auto hz = fullSpeedClock();
     console.init();
     console.baud(115200, hz/2);
-    initFaultHandlers();
     wait_ms(200); // give platformio's console time to connect
+
+    initFaultHandlers();
+    initSystemCall();
 
     VTableRam().systick = []() {
         ++ticks;
         if (ticks % 20 == 0)           // switch tasks every 20 ms
             changeTask(1 - curr_task); // FIXME: alternate between tasks 0 & 1
     };
-
-    initSystemCall();
 
     alignas(8) static uint8_t stack0 [1000];
     initTask(0, stack0 + sizeof stack0, []() {
@@ -168,7 +175,7 @@ int main () {
             wait_ms(20);
             led3 = 1;
             wait_ms(260);
-            int n = syscall(11, 22, 33, 44);
+            int n = syscall<42>(11, 22, 33, 44);
             if (n != 11 + 22 + 33 + 44)
                 printf("n? %d\n", n);
         }
