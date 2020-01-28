@@ -112,7 +112,7 @@ T grab (T& x) {
 template< typename T >
 void listAppend (T*& list, T* item) {
     item->next = 0; // just to be safe
-    while (list != 0)
+    while (list)
         list = list->next;
     list = item;
 }
@@ -121,7 +121,7 @@ void listAppend (T*& list, T* item) {
 template< typename T >
 bool listRemove (T*& list, T* item) {
     while (list != item)
-        if (list != 0)
+        if (list)
             list = list->next;
         else
             return false;
@@ -133,7 +133,7 @@ bool listRemove (T*& list, T* item) {
 template< typename T >
 T* listTakeFirst (T*& list) {
     T* item = list;
-    if (item != 0)
+    if (item)
         list = grab(item->next);
     return item;
 }
@@ -151,6 +151,7 @@ enum {
 
 struct Message {
     int request;
+    int filler [15];
 };
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -171,14 +172,15 @@ public:
     // non-blocking message send, behaves as atomic test-and-set
     int send (int dst, Message* msg) {
         Task& receiver = index(dst);
-        if (receiver.recvBuf == 0)
-            return -1;
-        *grab(receiver.recvBuf) = *msg;
-        receiver.blocking = 0; // FIXME get rid of blocking???
-        return 0;
+        if (receiver.recvBuf) {
+            *grab(receiver.recvBuf) = *msg;
+            receiver.resume(index());
+            return 0;
+        }
+        return -1; // not ready to receive a message
     }
 
-    // blocking send + receive, used for most request/reply exchanges
+    // blocking send + receive, used for request/reply sequences
     int call (int dst, Message* msg) {
         Task& receiver = index(dst);
         int e = send(dst, msg);
@@ -198,11 +200,10 @@ public:
         Task* sender = listTakeFirst(pendingQueue);
         if (sender == 0) {
             recvBuf = msg;
-            printf("R susp %d\n", index());
-            //context()->pc -= 2; // XXX big hack: repeat svc on next resume
             suspend();
             return -1;
         }
+        sender->resume(-123);
         printf("R from %d ok %d\n", sender->index(), index());
         return sender->index();
     }
@@ -212,7 +213,7 @@ private:
     Task* blocking; // set while suspended, to the task where we're queued
     Task* pendingQueue; // tasks waiting for their call to be accepted
     Task* finishQueue;  // tasks waiting for their call to be completed
-    struct Message* recvBuf; // set while recv is waiting for a new message
+    Message* recvBuf; // set while recv is waiting for a new message
 
     uint32_t index () const { return this - taskVec; }
     static Task& index (int num) { return taskVec[num]; }
@@ -229,27 +230,26 @@ private:
                                                                     : Runnable;
     }
 
-    HardwareStackFrame* context () const {
-        return (HardwareStackFrame*) (pspVec[index()] + 8);
+    HardwareStackFrame& context () const {
+        return *(HardwareStackFrame*) (pspVec[index()] + 8);
     }
 
     void suspend () {
+        if (index() != currTask)
+            printf(">>> SUSPEND? index %d != curr %d\n", index(), currTask);
         if (index() == currTask) {
             nextTask = nextRunnable();
             if (nextTask == currTask)
                 panic("no runnable tasks left");
             changeTask(nextTask); // will trigger PendSV tail-chaining
         }
+        printf("susp %d curr %d next %d\n", index(), currTask, nextTask);
         blocking = this;
     }
 
-    void resume () {
-        if (blocking != 0) { // might already be runnable
-            printf("resume %d\n", index());
-            listRemove(blocking->pendingQueue, this); // must be in this one
-            listRemove(blocking->finishQueue, this);  // or else in this one
-            blocking = 0;
-        }
+    void resume (int result) {
+        context().r[0] = result;
+        blocking = 0;
     }
 
     static Task taskVec [];
