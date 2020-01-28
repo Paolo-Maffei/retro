@@ -156,34 +156,11 @@ struct Message {
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Tasks (with same index as pspVec) and task management.
 
-struct Task {
-    // pointers used during queued ipc sends
-    Task* blocking; // set while suspended, to the task where we're queued
-    Task* next;     // used in suspended tasks, currently on some linked list
-
-    // receive queues holding queued message sending tasks
-    Task* pendingQueue; // tasks waiting for their call to be accepted
-    Task* finishQueue;  // tasks waiting for their call to be completed
-
-    struct Message* msgBuf;
-
-    // everything below is for conveniently using tasks as C++ objects
-
-    enum State { Unused, Suspended, Runnable, Active };
-
+class Task {
+public:
     uint32_t index () const { return this - taskVec; }
     static Task& index (int num) { return taskVec[num]; }
     static Task& current () { return taskVec[currTask]; }
-
-    State state () const {
-        uint32_t tidx = index();
-        // note: the current task *can* be suspended, in which case a task
-        // change will have been requested, and PendSV will be called asap
-        return pspVec[tidx] == 0 ? Unused
-                                 : blocking != 0 ? Suspended
-                                                 : tidx == currTask ? Active
-                                                                    : Runnable;
-    }
 
     static int nextRunnable () {
         int tidx = currTask;
@@ -209,7 +186,6 @@ struct Task {
         // ... all args valid, can now handle the request
         Task& receiver = Task::index(dst);
         int e = send(dst, msg);
-        bool done = e == EOK;
         if (e != 0) {
             listAppend(receiver.pendingQueue, this);
         } else
@@ -236,7 +212,25 @@ struct Task {
         return sender->index();
     }
 
+    Task* next;     // used in suspended tasks, currently on some linked list
 private:
+    Task* blocking; // set while suspended, to the task where we're queued
+    Task* pendingQueue; // tasks waiting for their call to be accepted
+    Task* finishQueue;  // tasks waiting for their call to be completed
+    struct Message* msgBuf; // set while recv is waiting for a new message
+
+    enum State { Unused, Suspended, Runnable, Active };
+
+    State state () const {
+        uint32_t tidx = index();
+        // note: the current task *can* be suspended, in which case a task
+        // change will have been requested, and PendSV will be called asap
+        return pspVec[tidx] == 0 ? Unused
+                                 : blocking != 0 ? Suspended
+                                                 : tidx == currTask ? Active
+                                                                    : Runnable;
+    }
+
     HardwareStackFrame* context () const {
         return (HardwareStackFrame*) (pspVec[index()] + 8);
     }
