@@ -448,6 +448,12 @@ int main () {
             printf("4: calling #%d\n", ++msg.request);
             int e = ipcCall(2, &msg);
             printf("4: result #%d status %d\n", msg.request, e);
+        }
+    )
+
+    DEFINE_TASK(5, 1000,
+        while (true) {
+            wait_ms(4321);
             Task::dump();
         }
     )
