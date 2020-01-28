@@ -418,7 +418,7 @@ int main () {
             int src = ipcRecv(&msg);
             printf("2: received #%d from %d\n", msg.request, src);
             if (src == 4) {
-                wait_ms(150);
+                wait_ms(550);
                 msg.request = -msg.request;
                 printf("2: about to reply #%d\n", msg.request);
                 int e = ipcSend(src, &msg);
