@@ -209,8 +209,11 @@ struct Task {
         // ... all args valid, can now handle the request
         Task& receiver = Task::index(dst);
         int e = send(dst, msg);
-        listAppend(e == EOK ? receiver.finishQueue
-                            : receiver.pendingQueue, this);
+        bool done = e == EOK;
+        if (e != 0) {
+            listAppend(receiver.pendingQueue, this);
+        } else
+            listAppend(receiver.finishQueue, this);
         printf("C susp %d\n", index());
         suspend();
         // ... what if the reply is already available?
@@ -225,6 +228,7 @@ struct Task {
         if (sender == 0) {
             msgBuf = msg;
             printf("R susp %d\n", index());
+            //context()->pc -= 2; // XXX big hack: repeat svc on next resume
             suspend();
             return -1;
         }
@@ -233,9 +237,8 @@ struct Task {
     }
 
 private:
-    uint32_t* requestArgs () const {
-        // same as: HardwareStackFrame* fp = ...; return fp->r;
-        return pspVec[index()] + 8;
+    HardwareStackFrame* context () const {
+        return (HardwareStackFrame*) (pspVec[index()] + 8);
     }
 
     void suspend () {
@@ -420,8 +423,7 @@ int main () {
         printf("2: start listening\n");
         while (1) {
             int src = ipcRecv(0, &msg);
-            if (src >= 0)
-                printf("2: received %d from %d\n", msg.request, src);
+            printf("2: received %d from %d\n", msg.request, src);
         }
     )
 #endif
