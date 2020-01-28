@@ -110,22 +110,22 @@ T grab (T& x) {
 
 // append an item to the end of a list
 template< typename T >
-void listAppend (T*& list, T* item) {
-    item->next = 0; // just to be safe
+void listAppend (T*& list, T& item) {
+    item.next = 0; // just to be safe
     while (list)
         list = list->next;
-    list = item;
+    list = &item;
 }
 
 // remove an item from a list
 template< typename T >
-bool listRemove (T*& list, T* item) {
-    while (list != item)
+bool listRemove (T*& list, T& item) {
+    while (list != &item)
         if (list)
             list = list->next;
         else
             return false;
-    list = grab(item->next);
+    list = grab(item.next);
     return true;
 }
 
@@ -173,7 +173,7 @@ public:
     // try to deliver a message to this task
     int deliver (int reply, Message* msg) {
         if (blocking && blocking != this) // is it waiting on another task?
-            if (!listRemove(blocking->finishQueue, this)) // try to get removed
+            if (!listRemove(blocking->finishQueue, *this)) // try to remove me
                 return -1; // waiting on something else, reject this delivery
 
         if (recvBuf == 0) // is this task ready to receive a message?
@@ -189,7 +189,7 @@ public:
         Task& sender = index(src);
         int e = deliver(src, msg);
         // either try delivery again later, or wait for reply
-        listAppend(e < 0 ? pendingQueue : finishQueue, &sender);
+        listAppend(e < 0 ? pendingQueue : finishQueue, sender);
         sender.recvBuf = msg;
         return sender.suspend(this);
     }
@@ -198,7 +198,7 @@ public:
     int listen (int flags, Message* msg) {
         Task* sender = listTakeFirst(pendingQueue);
         if (sender != 0) {
-            listAppend(finishQueue, sender);
+            listAppend(finishQueue, *sender);
             *msg = *sender->recvBuf;
             return sender->index();
         }
