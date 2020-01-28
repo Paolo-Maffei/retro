@@ -158,22 +158,19 @@ struct Message {
 
 class Task {
 public:
-    uint32_t index () const { return this - taskVec; }
-    static Task& index (int num) { return taskVec[num]; }
     static Task& current () { return taskVec[currTask]; }
 
     static int nextRunnable () {
         int tidx = currTask;
         do
             tidx = (tidx + 1) % MAX_TASKS;
-        while (Task::index(tidx).state() < Runnable);
+        while (index(tidx).state() < Runnable);
         return tidx;
     }
 
     // non-blocking message send, behaves as atomic test-and-set
     int send (int dst, Message* msg) {
-        // ... all args valid, can now handle the request
-        Task& receiver = Task::index(dst);
+        Task& receiver = index(dst);
         if (receiver.recvBuf == 0)
             return -1;
         *grab(receiver.recvBuf) = *msg;
@@ -183,8 +180,7 @@ public:
 
     // blocking send + receive, used for most request/reply exchanges
     int call (int dst, Message* msg) {
-        // ... all args valid, can now handle the request
-        Task& receiver = Task::index(dst);
+        Task& receiver = index(dst);
         int e = send(dst, msg);
         if (e != 0) {
             listAppend(receiver.pendingQueue, this);
@@ -199,7 +195,6 @@ public:
 
     // blocking receive, used by drivers and servers
     int recv (int flags, Message* msg) {
-        // ... all args valid, can now handle the request
         Task* sender = listTakeFirst(pendingQueue);
         if (sender == 0) {
             recvBuf = msg;
@@ -218,6 +213,9 @@ private:
     Task* pendingQueue; // tasks waiting for their call to be accepted
     Task* finishQueue;  // tasks waiting for their call to be completed
     struct Message* recvBuf; // set while recv is waiting for a new message
+
+    uint32_t index () const { return this - taskVec; }
+    static Task& index (int num) { return taskVec[num]; }
 
     enum State { Unused, Suspended, Runnable, Active };
 
