@@ -174,9 +174,9 @@ public:
     int send (int dst, Message* msg) {
         // ... all args valid, can now handle the request
         Task& receiver = Task::index(dst);
-        if (receiver.msgBuf == 0)
+        if (receiver.recvBuf == 0)
             return -1;
-        *grab(receiver.msgBuf) = *msg;
+        *grab(receiver.recvBuf) = *msg;
         receiver.blocking = 0; // FIXME get rid of blocking???
         return 0;
     }
@@ -202,7 +202,7 @@ public:
         // ... all args valid, can now handle the request
         Task* sender = listTakeFirst(pendingQueue);
         if (sender == 0) {
-            msgBuf = msg;
+            recvBuf = msg;
             printf("R susp %d\n", index());
             //context()->pc -= 2; // XXX big hack: repeat svc on next resume
             suspend();
@@ -212,12 +212,12 @@ public:
         return sender->index();
     }
 
-    Task* next;     // used in suspended tasks, currently on some linked list
+    Task* next;     // used in suspended tasks, i.e. when on some linked list
 private:
     Task* blocking; // set while suspended, to the task where we're queued
     Task* pendingQueue; // tasks waiting for their call to be accepted
     Task* finishQueue;  // tasks waiting for their call to be completed
-    struct Message* msgBuf; // set while recv is waiting for a new message
+    struct Message* recvBuf; // set while recv is waiting for a new message
 
     enum State { Unused, Suspended, Runnable, Active };
 
@@ -393,6 +393,9 @@ int main () {
             wait_ms(100);
             led2 = 1;
             wait_ms(900);
+            int n = demo(1, 2, 3, 4);
+            if (n != 1 + 2 + 3 + 4)
+                printf("n? %d\n", n);
         }
     )
 
@@ -404,24 +407,19 @@ int main () {
             wait_ms(20);
             led3 = 1;
             wait_ms(260);
-            int n = demo(1, 2, 3, 4);
-            if (n != 1 + 2 + 3 + 4)
-                printf("n? %d\n", n);
         }
     )
 
-#if 1
     DEFINE_TASK(2, 1000,
         wait_ms(2700);
-        static Message msg; // XXX static for now
         printf("2: start listening\n");
         while (1) {
+            Message msg;
             int src = ipcRecv(0, &msg);
             printf("2: received %d from %d\n", msg.request, src);
         }
     )
-#endif
-#if 1
+
     DEFINE_TASK(3, 1000,
         wait_ms(3000);
         static Message msg; // XXX static for now
@@ -434,7 +432,6 @@ int main () {
             wait_ms(1500);
         }
     )
-#endif
 
     startTasks(); // never returns
 }
