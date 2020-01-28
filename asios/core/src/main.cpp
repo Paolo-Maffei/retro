@@ -365,6 +365,21 @@ int syscall (...) {
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+// TODO a quick hack to force a context switch on the next 1000 Hz clock tick
+// it causes a continous race of task switches, since each waiting task yields
+// ... but it does have the desired effect of wait_ms letting other tasks run
+// still some delays, as each running task in the cycle consumes a clock tick
+bool yield;
+
+#define wait_ms myWait // rename to avoid using JeeH's version
+void wait_ms (uint32_t ms) {
+    uint32_t start = ticks;
+    while ((uint32_t) (ticks - start) < ms) {
+        yield = true;
+        __asm("wfi");  // reduce power consumption
+    }
+}
+
 int main () {
     const auto hz = fullSpeedClock();
     console.init();
@@ -376,8 +391,9 @@ int main () {
 
     VTableRam().systick = []() {
         ++ticks;
-        if (ticks % 20 == 0) // switch tasks every 20 ms
+        if (yield || ticks % 20 == 0) // switch tasks every 20 ms
             changeTask(Task::nextRunnable());
+        yield = false;
     };
 
 #define DEFINE_TASK(index, stacksize, body) \
@@ -395,7 +411,7 @@ int main () {
             wait_ms(900);
             int n = demo(1, 2, 3, 4);
             if (n != 1 + 2 + 3 + 4)
-                printf("n? %d\n", n);
+                printf("%d n? %d\n", ticks, n);
         }
     )
 
@@ -412,18 +428,18 @@ int main () {
 
     DEFINE_TASK(2, 1000,
         wait_ms(1700);
-        printf("2: start listening\n");
+        printf("%d 2: start listening\n", ticks);
         while (true) {
             Message msg;
             int src = ipcRecv(&msg);
-            printf("2: received #%d from %d\n", msg.request, src);
+            printf("%d 2: received #%d from %d\n", ticks, msg.request, src);
             if (src == 4) {
                 wait_ms(150);
                 msg.request = -msg.request;
-                printf("2: about to reply #%d\n", msg.request);
+                printf("%d 2: about to reply #%d\n", ticks, msg.request);
                 int e = ipcSend(src, &msg);
                 if (e != 0)
-                    printf("2: reply? %d\n", e);
+                    printf("%d 2: reply? %d\n", ticks, e);
             }
         }
     )
@@ -433,10 +449,10 @@ int main () {
         msg.request = 99;
         while (true) {
             wait_ms(1500);
-            printf("3: sending #%d\n", ++msg.request);
+            printf("%d 3: sending #%d\n", ticks, ++msg.request);
             int e = ipcSend(2, &msg);
             if (e != 0)
-                printf("3: send? %d\n", e);
+                printf("%d 3: send? %d\n", ticks, e);
         }
     )
 
@@ -445,9 +461,9 @@ int main () {
         msg.request = 999;
         while (true) {
             wait_ms(4000);
-            printf("4: calling #%d\n", ++msg.request);
+            printf("%d 4: calling #%d\n", ticks, ++msg.request);
             int e = ipcCall(2, &msg);
-            printf("4: result #%d status %d\n", msg.request, e);
+            printf("%d 4: result #%d status %d\n", ticks, msg.request, e);
         }
     )
 
