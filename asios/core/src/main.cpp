@@ -176,7 +176,7 @@ public:
             if (!listRemove(blocking->finishQueue, this)) // try to get removed
                 return -1; // waiting on something else, reject this delivery
 
-        if (recvBuf == 0) // is everything ready to receive a message?
+        if (recvBuf == 0) // is this task ready to receive a message?
             return -1; // sorry, can't accept this delivery
 
         *grab(recvBuf) = *msg;
@@ -188,29 +188,22 @@ public:
     int replyTo (int src, Message* msg) {
         Task& sender = index(src);
         int e = deliver(src, msg);
-        if (e < 0) // not in receive mode, will receive later
-            listAppend(pendingQueue, &sender);
-        else { // it has been received, queue up to wait for reply
-            listAppend(finishQueue, &sender);
-            sender.recvBuf = msg;
-        }
-        sender.suspend(this);
-        return -1; // suspended, this reply will be adjusted in resume()
+        // either try delivery again later, or wait for reply
+        listAppend(e < 0 ? pendingQueue : finishQueue, &sender);
+        sender.recvBuf = msg;
+        return sender.suspend(this);
     }
 
+    // listen for incoming messages, block each sender while handling calls
     int listen (int flags, Message* msg) {
         Task* sender = listTakeFirst(pendingQueue);
         if (sender != 0) {
-            printf("R from %d ok %d\n", sender->index(), index());
             listAppend(finishQueue, sender);
-            Message* sendBuf = (Message*) sender->context().r[1]; /// XXX yuck
-            sender->recvBuf = sendBuf;
-            *msg = *sendBuf;
+            *msg = *sender->recvBuf;
             return sender->index();
         }
         recvBuf = msg;
-        suspend(this);
-        return -1; // suspended, this reply will be adjusted in resume()
+        return suspend(this);
     }
 
     Task* next;     // used in suspended tasks, i.e. when on some linked list
@@ -237,17 +230,17 @@ private:
         return *(HardwareStackFrame*) (pspVec[index()] + 8);
     }
 
-    void suspend (Task* reason) {
+    int suspend (Task* reason) {
         if (index() != currTask)
             printf(">>> SUSPEND? index %d != curr %d\n", index(), currTask);
-        if (index() == currTask) {
-            nextTask = nextRunnable();
-            if (nextTask == currTask)
-                panic("no runnable tasks left");
-            changeTask(nextTask); // will trigger PendSV tail-chaining
-        }
-        printf("susp %d curr %d next %d\n", index(), currTask, nextTask);
+
+        nextTask = nextRunnable();
+        if (nextTask == currTask)
+            panic("no runnable tasks left");
+        changeTask(nextTask); // will trigger PendSV tail-chaining
+
         blocking = reason;
+        return -1; // suspended, this result will be adjusted in resume()
     }
 
     void resume (int result) {
@@ -433,26 +426,25 @@ int main () {
     )
 
     DEFINE_TASK(3, 1000,
-        wait_ms(2000);
         Message msg;
         msg.request = 99;
         while (1) {
+            wait_ms(1500);
             printf("3: sending #%d\n", ++msg.request);
             int e = ipcSend(2, &msg);
             if (e != 0)
                 printf("3: send? %d\n", e);
-            wait_ms(1500);
         }
     )
 
     DEFINE_TASK(4, 1000,
         Message msg;
-        msg.request = 9999;
+        msg.request = 999;
         while (1) {
             wait_ms(4000);
             printf("4: calling #%d\n", ++msg.request);
             int r = ipcCall(2, &msg);
-            printf("4: result %d\n", r);
+            printf("4: result #%d from %d\n", msg.request, r);
         }
     )
 
