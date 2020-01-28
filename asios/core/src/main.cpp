@@ -38,7 +38,7 @@ void setupFaultHandlers () {
 // Task switcher, adapted from a superb example in Joseph Yiu's book, ch. 10:
 // "The Definitive Guide to Arm Cortex M3 and M4", 3rd edition, 2014.
 
-constexpr int MAX_TASKS = 10;
+constexpr int MAX_TASKS = 25;
 uint32_t* pspVec[MAX_TASKS]; // Process Stack Pointers for each runnable task
 uint32_t currTask, nextTask; // index of current and next tasks
 
@@ -129,23 +129,6 @@ bool listRemove (T*& list, T& item) {
     return true;
 }
 
-// take the first item off a list, returns null if none
-template< typename T >
-T* listTakeFirst (T*& list) {
-    T* item = list;
-    if (item)
-        list = grab(item->next);
-    return item;
-}
-
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Error numbers
-
-enum {
-    EOK,
-    ENOSYS,
-};
-
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Message-based IPC.
 
@@ -159,6 +142,8 @@ struct Message {
 
 class Task {
 public:
+    Task* next; // used in waiting tasks, i.e. when on some linked list
+
     static Task& index (int num) { return taskVec[num]; }
     static Task& current () { return taskVec[currTask]; }
 
@@ -171,23 +156,26 @@ public:
     }
 
     // try to deliver a message to this task
-    int deliver (int reply, Message* msg) {
-        if (blocking && blocking != this) // is it waiting on another task?
-            if (!listRemove(blocking->finishQueue, *this)) // try to remove me
+    int deliver (Message* msg) {
+        bool waitingForMe = false;
+        if (blocking && blocking != this) { // is it waiting for completion?
+            waitingForMe = listRemove(blocking->finishQueue, *this);
+            if (!waitingForMe)
                 return -1; // waiting on something else, reject this delivery
+        }
 
         if (recvBuf == 0) // is this task ready to receive a message?
-            return -1; // sorry, can't accept this delivery
+            return -1; // nope, can't deliver this message
 
-        *grab(recvBuf) = *msg;
-        resume(reply);
-        return 0;
+        *grab(recvBuf) = *msg; // copy message to destination
+        resume(waitingForMe ? 0 : currTask); // if it's a reply, return 0
+        return 0; // successfull delivery
     }
 
     // deal with an incoming message which expects a reply
-    int replyTo (int src, Message* msg) {
-        Task& sender = index(src);
-        int e = deliver(src, msg);
+    int replyTo (Message* msg) {
+        Task& sender = current();
+        int e = deliver(msg);
         // either try delivery again later, or wait for reply
         listAppend(e < 0 ? pendingQueue : finishQueue, sender);
         sender.recvBuf = msg;
@@ -195,23 +183,25 @@ public:
     }
 
     // listen for incoming messages, block each sender while handling calls
-    int listen (int flags, Message* msg) {
-        Task* sender = listTakeFirst(pendingQueue);
-        if (sender != 0) {
-            listAppend(finishQueue, *sender);
-            *msg = *sender->recvBuf;
-            return sender->index();
+    int listen (Message* msg) {
+        if (pendingQueue != 0) {
+            Task& sender = *pendingQueue;
+            pendingQueue = grab(pendingQueue->next);
+            listAppend(finishQueue, sender);
+            *msg = *sender.recvBuf; // copy message to this receiver
+            return sender.index();
         }
         recvBuf = msg;
         return suspend(this);
     }
 
-    Task* next;     // used in suspended tasks, i.e. when on some linked list
+    static void dump ();
+
 private:
-    Task* blocking; // set while suspended, to the task where we're queued
+    Task* blocking;     // set while suspended, to the task where we're queued
     Task* pendingQueue; // tasks waiting for their call to be accepted
     Task* finishQueue;  // tasks waiting for their call to be completed
-    Message* recvBuf; // set while recv is waiting for a new message
+    Message* recvBuf;   // set while recv is waiting for a new message
 
     uint32_t index () const { return this - taskVec; }
 
@@ -231,7 +221,7 @@ private:
     }
 
     int suspend (Task* reason) {
-        if (index() != currTask)
+        if (index() != currTask) // could be supported, but no need so far
             printf(">>> SUSPEND? index %d != curr %d\n", index(), currTask);
 
         nextTask = nextRunnable();
@@ -253,8 +243,21 @@ private:
 
 Task Task::taskVec [MAX_TASKS];
 
+// a crude task dump for basic debugging, using console & printf
+void Task::dump () {
+    for (int i = 0; i < MAX_TASKS; ++i)
+        if (pspVec[i]) {
+            Task& t = Task::index(i);
+            printf("[%03x] %2d: %c psp %08x",
+                    (uint32_t) &t & 0xFFF, i, "USWRA"[t.state()], pspVec[i]);
+            printf(" blk %2d pend %08x fini %08x rbuf %08x\n",
+                    t.blocking == 0 ? -1 : t.blocking->index(),
+                    t.pendingQueue, t.finishQueue, t.recvBuf);
+        }
+}
+
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// System call handlers and dispatch vector.
+// System call handlers and dispatch vector. These always run in SVC context.
 
 enum {
     SYSCALL_ipcSend,
@@ -272,7 +275,7 @@ enum {
 // these are all the system call stubs
 SYSCALL_STUB(ipcSend, (int dst, Message* msg))
 SYSCALL_STUB(ipcCall, (int dst, Message* msg))
-SYSCALL_STUB(ipcRecv, (int flags, Message* msg))
+SYSCALL_STUB(ipcRecv, (Message* msg))
 SYSCALL_STUB(demo, (int a, int b, int c, int d))
 
 // TODO move everything up to the above enum to a C header for use in tasks
@@ -282,7 +285,7 @@ int syscall_ipcSend (HardwareStackFrame* fp) {
     int dst = fp->r[0];
     Message* msg = (Message*) fp->r[1];
     // ... validate dst and msg
-    return Task::index(dst).deliver(currTask, msg);
+    return Task::index(dst).deliver(msg);
 }
 
 // blocking send + receive, used for request/reply sequences
@@ -290,17 +293,17 @@ int syscall_ipcCall (HardwareStackFrame* fp) {
     int dst = fp->r[0];
     Message* msg = (Message*) fp->r[1];
     // ... validate dst and msg
-    return Task::index(dst).replyTo(currTask, msg);
+    return Task::index(dst).replyTo(msg);
 }
 
 // blocking receive, used by drivers and servers
 int syscall_ipcRecv (HardwareStackFrame* fp) {
-    int flags = fp->r[0];
-    Message* msg = (Message*) fp->r[1];
-    // ... validate flags and msg
-    return Task::current().listen(flags, msg);
+    Message* msg = (Message*) fp->r[0];
+    // ... validate msg
+    return Task::current().listen(msg);
 }
 
+// test syscall to check that args + return values are properly transferred
 int syscall_demo (HardwareStackFrame* fp) {
     printf("< demo %d %d %d %d >\n", fp->r[0], fp->r[1], fp->r[2], fp->r[3]);
     return fp->r[0] + fp->r[1] + fp->r[2] + fp->r[3];
@@ -334,13 +337,13 @@ void setupSystemCalls () {
         printf("< svc.%d psp %08x r0.%d lr %08x pc %08x psr %08x >\n",
                 req, psp, psp->r[0], psp->lr, psp->pc, psp->psr);
 #endif
-        // make pspVec[currTask] "resemble" a stack with full context XXX why?
+        // make pspVec[currTask] "resemble" a stack with full context
         // this is fiction, since r4..r11 (and fp regs) have *not* been saved
         // note that pspVec[currTask] is redundant, the real psp is what counts
         // now all valid pspVec entries have similar stack ptrs for kernel use
         pspVec[currTask] = (uint32_t*) psp - 8;
 
-        psp->r[0] = req < SYSCALL_MAX ? syscallVec[req](psp) : -ENOSYS;
+        psp->r[0] = req < SYSCALL_MAX ? syscallVec[req](psp) : -1;
     };
 }
 
@@ -410,9 +413,9 @@ int main () {
     DEFINE_TASK(2, 1000,
         wait_ms(1700);
         printf("2: start listening\n");
-        while (1) {
+        while (true) {
             Message msg;
-            int src = ipcRecv(0, &msg);
+            int src = ipcRecv(&msg);
             printf("2: received #%d from %d\n", msg.request, src);
             if (src == 4) {
                 wait_ms(150);
@@ -428,7 +431,7 @@ int main () {
     DEFINE_TASK(3, 1000,
         Message msg;
         msg.request = 99;
-        while (1) {
+        while (true) {
             wait_ms(1500);
             printf("3: sending #%d\n", ++msg.request);
             int e = ipcSend(2, &msg);
@@ -440,11 +443,12 @@ int main () {
     DEFINE_TASK(4, 1000,
         Message msg;
         msg.request = 999;
-        while (1) {
+        while (true) {
             wait_ms(4000);
             printf("4: calling #%d\n", ++msg.request);
-            int r = ipcCall(2, &msg);
-            printf("4: result #%d from %d\n", msg.request, r);
+            int e = ipcCall(2, &msg);
+            printf("4: result #%d status %d\n", msg.request, e);
+            Task::dump();
         }
     )
 
