@@ -139,6 +139,21 @@ T* listTakeFirst (T*& list) {
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Error numbers
+
+enum {
+    EOK,
+    ENOSYS,
+};
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Message-based IPC.
+
+struct Message {
+    int request;
+};
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Tasks (with same index as pspVec) and task management.
 
 struct Task {
@@ -149,6 +164,8 @@ struct Task {
     // receive queues holding queued message sending tasks
     Task* pendingQueue; // tasks waiting for their call to be accepted
     Task* finishQueue;  // tasks waiting for their call to be completed
+
+    struct Message* msgBuf;
 
     // everything below is for conveniently using tasks as C++ objects
 
@@ -168,30 +185,6 @@ struct Task {
                                                                     : Runnable;
     }
 
-    void suspend (Task& t) {
-        uint32_t tidx = index();
-        if (tidx == currTask) {
-            nextTask = nextRunnable();
-            if (nextTask == currTask)
-                panic("no runnable tasks left");
-            changeTask(nextTask); // will trigger PendSV tail-chaining
-        }
-        blocking = &t;
-    }
-
-    void waitFor (Task& server, bool accepted) {
-        listAppend(accepted ? finishQueue : pendingQueue, this);
-        suspend(server);
-    }
-
-    void resume () {
-        if (blocking != 0) { // might already be runnable
-            listRemove(blocking->pendingQueue, this); // must be in this one
-            listRemove(blocking->finishQueue, this);  // or else in this one
-            blocking = 0;
-        }
-    }
-
     static int nextRunnable () {
         int tidx = currTask;
         do
@@ -200,61 +193,74 @@ struct Task {
         return tidx;
     }
 
-private:
-    static Task taskVec [];
-};
-
-Task Task::taskVec [MAX_TASKS];
-
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Error numbers
-
-enum {
-    EOK,
-    ENOSYS,
-};
-
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Message-based IPC.
-
-struct Message {
-    int request;
-
     // non-blocking message send, behaves as atomic test-and-set
-    int send (int src, int dst) {
+    int send (int dst, Message* msg) {
         // ... all args valid, can now handle the request
         Task& receiver = Task::index(dst);
-        if (receiver.state() != Task::Suspended)
+        if (receiver.msgBuf == 0)
             return -1;
-        receiver.blocking = 0;
-        listAppend(receiver.pendingQueue, &Task::index(src));
+        *grab(receiver.msgBuf) = *msg;
+        receiver.blocking = 0; // FIXME get rid of blocking???
         return 0;
     }
 
     // blocking send + receive, used for most request/reply exchanges
-    int call (int src, int dst) {
+    int call (int dst, Message* msg) {
         // ... all args valid, can now handle the request
         Task& receiver = Task::index(dst);
-        int e = send(src, dst);
-        Task::index(src).waitFor(receiver, e == EOK);
+        int e = send(dst, msg);
+        listAppend(e == EOK ? receiver.finishQueue
+                            : receiver.pendingQueue, this);
+        printf("C susp %d\n", index());
+        suspend();
         // ... what if the reply is already available?
         // ... how to deal with return code, since we're now on another task
         return e;
     }
 
     // blocking receive, used by drivers and servers
-    int recv (int dst, int flags) {
+    int recv (int flags, Message* msg) {
         // ... all args valid, can now handle the request
-        Task& receiver = Task::index(dst);
-        Task* sender = listTakeFirst(receiver.pendingQueue);
-        if (sender != 0) {
-            receiver.suspend(receiver);
+        Task* sender = listTakeFirst(pendingQueue);
+        if (sender == 0) {
+            msgBuf = msg;
+            printf("R susp %d\n", index());
+            suspend();
             return -1;
         }
-        // ... copy message from sender to my message buffer
+        printf("R from %d ok %d\n", sender->index(), index());
         return sender->index();
     }
+
+private:
+    uint32_t* requestArgs () const {
+        // same as: HardwareStackFrame* fp = ...; return fp->r;
+        return pspVec[index()] + 8;
+    }
+
+    void suspend () {
+        if (index() == currTask) {
+            nextTask = nextRunnable();
+            if (nextTask == currTask)
+                panic("no runnable tasks left");
+            changeTask(nextTask); // will trigger PendSV tail-chaining
+        }
+        blocking = this;
+    }
+
+    void resume () {
+        if (blocking != 0) { // might already be runnable
+            printf("resume %d\n", index());
+            listRemove(blocking->pendingQueue, this); // must be in this one
+            listRemove(blocking->finishQueue, this);  // or else in this one
+            blocking = 0;
+        }
+    }
+
+    static Task taskVec [];
 };
+
+Task Task::taskVec [MAX_TASKS];
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // System call handlers and dispatch vector.
@@ -284,21 +290,21 @@ int syscall_ipcSend (HardwareStackFrame* fp) {
     int dst = fp->r[0];
     Message* msg = (Message*) fp->r[1];
     // ... validate dst and msg
-    return msg->send(currTask, dst);
+    return Task::current().send(dst, msg);
 }
 
 int syscall_ipcCall (HardwareStackFrame* fp) {
     int dst = fp->r[0];
     Message* msg = (Message*) fp->r[1];
     // ... validate dst and msg
-    return msg->call(currTask, dst);
+    return Task::current().call(dst, msg);
 }
 
 int syscall_ipcRecv (HardwareStackFrame* fp) {
     int flags = fp->r[0];
     Message* msg = (Message*) fp->r[1];
     // ... validate flags and msg
-    return msg->recv(currTask, flags);
+    return Task::current().recv(flags, msg);
 }
 
 int syscall_demo (HardwareStackFrame* fp) {
@@ -401,8 +407,8 @@ int main () {
             wait_ms(20);
             led3 = 1;
             wait_ms(260);
-            int n = demo(11, 22, 33, 44);
-            if (n != 11 + 22 + 33 + 44)
+            int n = demo(1, 2, 3, 4);
+            if (n != 1 + 2 + 3 + 4)
                 printf("n? %d\n", n);
         }
     )
