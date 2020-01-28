@@ -168,7 +168,7 @@ struct Task {
                                                                     : Runnable;
     }
 
-    void suspend (Task* server) {
+    void suspend (Task& t) {
         uint32_t tidx = index();
         if (tidx == currTask) {
             nextTask = nextRunnable();
@@ -176,12 +176,12 @@ struct Task {
                 panic("no runnable tasks left");
             changeTask(nextTask); // will trigger PendSV tail-chaining
         }
-        blocking = server;
+        blocking = &t;
     }
 
     void waitFor (Task& server, bool accepted) {
         listAppend(accepted ? finishQueue : pendingQueue, this);
-        suspend(&server);
+        suspend(server);
     }
 
     void resume () {
@@ -246,12 +246,10 @@ struct Message {
     int recv (int dst, int flags) {
         // ... all args valid, can now handle the request
         Task& receiver = Task::index(dst);
-        Task* sender;
-        while (1) {
-            sender = listTakeFirst(receiver.pendingQueue);
-            if (sender != 0)
-                break;
-            receiver.suspend(0);
+        Task* sender = listTakeFirst(receiver.pendingQueue);
+        if (sender != 0) {
+            receiver.suspend(receiver);
+            return -1;
         }
         // ... copy message from sender to my message buffer
         return sender->index();
@@ -413,16 +411,15 @@ int main () {
     DEFINE_TASK(2, 1000,
         wait_ms(2700);
         static Message msg; // XXX static for now
+        printf("2: start listening\n");
         while (1) {
             int src = ipcRecv(0, &msg);
-            if (src < 0)
-                break;
-            printf("2: received %d from %d\n", msg.request, src);
+            if (src >= 0)
+                printf("2: received %d from %d\n", msg.request, src);
         }
-        panic("receiver has quit");
     )
 #endif
-#if 0
+#if 1
     DEFINE_TASK(3, 1000,
         wait_ms(3000);
         static Message msg; // XXX static for now
