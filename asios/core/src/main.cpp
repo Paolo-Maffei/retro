@@ -203,6 +203,9 @@ public:
         if (sender != 0) {
             printf("R from %d ok %d\n", sender->index(), index());
             listAppend(finishQueue, sender);
+            Message* sendBuf = (Message*) sender->context().r[1]; /// XXX yuck
+            sender->recvBuf = sendBuf;
+            *msg = *sendBuf;
             return sender->index();
         }
         recvBuf = msg;
@@ -419,8 +422,9 @@ int main () {
             int src = ipcRecv(0, &msg);
             printf("2: received #%d from %d\n", msg.request, src);
             if (src == 4) {
-                wait_ms(1000);
+                wait_ms(150);
                 msg.request = -msg.request;
+                printf("2: about to reply #%d\n", msg.request);
                 int e = ipcSend(src, &msg);
                 if (e != 0)
                     printf("2: reply? %d\n", e);
@@ -445,7 +449,7 @@ int main () {
         Message msg;
         msg.request = 9999;
         while (1) {
-            wait_ms(5000);
+            wait_ms(4000);
             printf("4: calling #%d\n", ++msg.request);
             int r = ipcCall(2, &msg);
             printf("4: result %d\n", r);
