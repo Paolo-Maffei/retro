@@ -159,6 +159,7 @@ struct Message {
 
 class Task {
 public:
+    static Task& index (int num) { return taskVec[num]; }
     static Task& current () { return taskVec[currTask]; }
 
     static int nextRunnable () {
@@ -169,43 +170,44 @@ public:
         return tidx;
     }
 
-    // non-blocking message send, behaves as atomic test-and-set
-    int send (int dst, Message* msg) {
-        Task& receiver = index(dst);
-        if (receiver.recvBuf) {
-            *grab(receiver.recvBuf) = *msg;
-            receiver.resume(index());
-            return 0;
+    // try to deliver a message to this task
+    int deliver (int reply, Message* msg) {
+        if (blocking && blocking != this) // is it waiting on another task?
+            if (!listRemove(blocking->finishQueue, this)) // try to get removed
+                return -1; // waiting on something else, reject this delivery
+
+        if (recvBuf == 0) // is everything ready to receive a message?
+            return -1; // sorry, can't accept this delivery
+
+        *grab(recvBuf) = *msg;
+        resume(reply);
+        return 0;
+    }
+
+    // deal with an incoming message which expects a reply
+    int replyTo (int src, Message* msg) {
+        Task& sender = index(src);
+        int e = deliver(src, msg);
+        if (e < 0) // not in receive mode, will receive later
+            listAppend(pendingQueue, &sender);
+        else { // it has been received, queue up to wait for reply
+            listAppend(finishQueue, &sender);
+            sender.recvBuf = msg;
         }
-        return -1; // not ready to receive a message
+        sender.suspend(this);
+        return -1; // suspended, this reply will be adjusted in resume()
     }
 
-    // blocking send + receive, used for request/reply sequences
-    int call (int dst, Message* msg) {
-        Task& receiver = index(dst);
-        int e = send(dst, msg);
-        if (e != 0) {
-            listAppend(receiver.pendingQueue, this);
-        } else
-            listAppend(receiver.finishQueue, this);
-        printf("C susp %d\n", index());
-        suspend();
-        // ... what if the reply is already available?
-        // ... how to deal with return code, since we're now on another task
-        return e;
-    }
-
-    // blocking receive, used by drivers and servers
-    int recv (int flags, Message* msg) {
+    int listen (int flags, Message* msg) {
         Task* sender = listTakeFirst(pendingQueue);
-        if (sender == 0) {
-            recvBuf = msg;
-            suspend();
-            return -1;
+        if (sender != 0) {
+            printf("R from %d ok %d\n", sender->index(), index());
+            listAppend(finishQueue, sender);
+            return sender->index();
         }
-        sender->resume(-123);
-        printf("R from %d ok %d\n", sender->index(), index());
-        return sender->index();
+        recvBuf = msg;
+        suspend(this);
+        return -1; // suspended, this reply will be adjusted in resume()
     }
 
     Task* next;     // used in suspended tasks, i.e. when on some linked list
@@ -216,25 +218,23 @@ private:
     Message* recvBuf; // set while recv is waiting for a new message
 
     uint32_t index () const { return this - taskVec; }
-    static Task& index (int num) { return taskVec[num]; }
 
-    enum State { Unused, Suspended, Runnable, Active };
+    enum State { Unused, Suspended, Waiting, Runnable, Active };
 
     State state () const {
         uint32_t tidx = index();
-        // note: the current task *can* be suspended, in which case a task
-        // change will have been requested, and PendSV will be called asap
-        return pspVec[tidx] == 0 ? Unused
-                                 : blocking != 0 ? Suspended
-                                                 : tidx == currTask ? Active
-                                                                    : Runnable;
+        return pspVec[tidx] == 0 ? Unused :     // task is not in use
+                blocking == this ? Suspended :  // has to be resumed explicitly
+                   blocking != 0 ? Waiting :    // waiting on another task
+                tidx != currTask ? Runnable :   // will run when scheduled
+                                   Active;      // currently running
     }
 
     HardwareStackFrame& context () const {
         return *(HardwareStackFrame*) (pspVec[index()] + 8);
     }
 
-    void suspend () {
+    void suspend (Task* reason) {
         if (index() != currTask)
             printf(">>> SUSPEND? index %d != curr %d\n", index(), currTask);
         if (index() == currTask) {
@@ -244,7 +244,7 @@ private:
             changeTask(nextTask); // will trigger PendSV tail-chaining
         }
         printf("susp %d curr %d next %d\n", index(), currTask, nextTask);
-        blocking = this;
+        blocking = reason;
     }
 
     void resume (int result) {
@@ -281,25 +281,28 @@ SYSCALL_STUB(demo, (int a, int b, int c, int d))
 
 // TODO move everything up to the above enum to a C header for use in tasks
 
+// non-blocking message send, behaves as atomic test-and-set
 int syscall_ipcSend (HardwareStackFrame* fp) {
     int dst = fp->r[0];
     Message* msg = (Message*) fp->r[1];
     // ... validate dst and msg
-    return Task::current().send(dst, msg);
+    return Task::index(dst).deliver(currTask, msg);
 }
 
+// blocking send + receive, used for request/reply sequences
 int syscall_ipcCall (HardwareStackFrame* fp) {
     int dst = fp->r[0];
     Message* msg = (Message*) fp->r[1];
     // ... validate dst and msg
-    return Task::current().call(dst, msg);
+    return Task::index(dst).replyTo(currTask, msg);
 }
 
+// blocking receive, used by drivers and servers
 int syscall_ipcRecv (HardwareStackFrame* fp) {
     int flags = fp->r[0];
     Message* msg = (Message*) fp->r[1];
     // ... validate flags and msg
-    return Task::current().recv(flags, msg);
+    return Task::current().listen(flags, msg);
 }
 
 int syscall_demo (HardwareStackFrame* fp) {
@@ -409,25 +412,43 @@ int main () {
     )
 
     DEFINE_TASK(2, 1000,
-        wait_ms(2700);
+        wait_ms(1700);
         printf("2: start listening\n");
         while (1) {
             Message msg;
             int src = ipcRecv(0, &msg);
-            printf("2: received %d from %d\n", msg.request, src);
+            printf("2: received #%d from %d\n", msg.request, src);
+            if (src == 4) {
+                wait_ms(1000);
+                msg.request = -msg.request;
+                int e = ipcSend(src, &msg);
+                if (e != 0)
+                    printf("2: reply? %d\n", e);
+            }
         }
     )
 
     DEFINE_TASK(3, 1000,
-        wait_ms(3000);
-        static Message msg; // XXX static for now
-        //memset(&msg, 0, sizeof msg);
+        wait_ms(2000);
+        Message msg;
+        msg.request = 99;
         while (1) {
-            printf("3: sending %d\n", ++msg.request);
+            printf("3: sending #%d\n", ++msg.request);
             int e = ipcSend(2, &msg);
             if (e != 0)
                 printf("3: send? %d\n", e);
             wait_ms(1500);
+        }
+    )
+
+    DEFINE_TASK(4, 1000,
+        Message msg;
+        msg.request = 9999;
+        while (1) {
+            wait_ms(5000);
+            printf("4: calling #%d\n", ++msg.request);
+            int r = ipcCall(2, &msg);
+            printf("4: result %d\n", r);
         }
     )
 
