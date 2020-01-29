@@ -365,13 +365,18 @@ int syscall (...) {
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-// TODO a quick hack to force a context switch on the next 1000 Hz clock tick
+// just a quick hack to force a context switch on the next 1000 Hz clock tick
 // it causes a continous race of task switches, since each waiting task yields
 // ... but it does have the desired effect of wait_ms letting other tasks run
 // still some delays, as each running task in the cycle consumes a clock tick
+// note: changeTask can't be called from unprivileged code, i.e. thread mode
+//
+// TODO solution is to suspend delaying tasks so they don't eat up cpu cycles
+// but this needs some new code, to manage multiple timers and queues for them
+
 bool yield;
 
-#define wait_ms myWait // rename to avoid using JeeH's version
+#define wait_ms myWait // rename to avoid clashing with JeeH's version
 void wait_ms (uint32_t ms) {
     uint32_t start = ticks;
     while ((uint32_t) (ticks - start) < ms) {
@@ -434,7 +439,7 @@ int main () {
             int src = ipcRecv(&msg);
             printf("%d 2: received #%d from %d\n", ticks, msg.request, src);
             if (src == 4) {
-                wait_ms(150);
+                wait_ms(50);
                 msg.request = -msg.request;
                 printf("%d 2: about to reply #%d\n", ticks, msg.request);
                 int e = ipcSend(src, &msg);
