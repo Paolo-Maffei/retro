@@ -164,12 +164,12 @@ public:
                 return -1; // waiting on something else, reject this delivery
         }
 
-        if (recvBuf == 0) // is this task ready to receive a message?
+        if (msgBuf == 0) // is this task ready to receive a message?
             return -1; // nope, can't deliver this message
 
-        *grab(recvBuf) = *msg; // copy message to destination
+        *grab(msgBuf) = *msg; // copy message to destination
         resume(waitingForMe ? 0 : currTask); // if it's a reply, return 0
-        return 0; // successfull delivery
+        return 0; // successful delivery
     }
 
     // deal with an incoming message which expects a reply
@@ -178,7 +178,7 @@ public:
         int e = deliver(msg);
         // either try delivery again later, or wait for reply
         listAppend(e < 0 ? pendingQueue : finishQueue, sender);
-        sender.recvBuf = msg;
+        sender.msgBuf = msg;
         return sender.suspend(this);
     }
 
@@ -188,20 +188,20 @@ public:
             Task& sender = *pendingQueue;
             pendingQueue = grab(pendingQueue->next);
             listAppend(finishQueue, sender);
-            *msg = *sender.recvBuf; // copy message to this receiver
+            *msg = *sender.msgBuf; // copy message to this receiver
             return sender.index();
         }
-        recvBuf = msg;
+        msgBuf = msg;
         return suspend(this);
     }
 
     static void dump ();
 
 private:
-    Task* blocking;     // set while suspended, to the task where we're queued
+    Task* blocking;     // set while waiting, to the task where we're queued
     Task* pendingQueue; // tasks waiting for their call to be accepted
     Task* finishQueue;  // tasks waiting for their call to be completed
-    Message* recvBuf;   // set while recv is waiting for a new message
+    Message* msgBuf;    // set while recv or reply wants a new message
 
     uint32_t index () const { return this - taskVec; }
 
@@ -234,8 +234,8 @@ private:
     }
 
     void resume (int result) {
-        context().r[0] = result;
-        blocking = 0;
+        context().r[0] = result; // save result inside calling context
+        blocking = 0; // then allow it to run again
     }
 
     static Task taskVec [];
@@ -248,11 +248,11 @@ void Task::dump () {
     for (int i = 0; i < MAX_TASKS; ++i)
         if (pspVec[i]) {
             Task& t = Task::index(i);
-            printf("[%03x] %2d: %c psp %08x",
+            printf("[%03x] %2d: %c sp %08x",
                     (uint32_t) &t & 0xFFF, i, "USWRA"[t.state()], pspVec[i]);
-            printf(" blk %2d pend %08x fini %08x rbuf %08x\n",
+            printf(" blkg %2d pend %08x fini %08x mbuf %08x\n",
                     t.blocking == 0 ? -1 : t.blocking->index(),
-                    t.pendingQueue, t.finishQueue, t.recvBuf);
+                    t.pendingQueue, t.finishQueue, t.msgBuf);
         }
 }
 
@@ -405,33 +405,33 @@ int main () {
     alignas(8) static uint8_t stack_##index [stacksize]; \
     initTask(index, stack_##index + stacksize, []() { body });
 
-    DEFINE_TASK(0, 1000,
+    DEFINE_TASK(0, 256,
         PinA<6> led2;
         led2.mode(Pinmode::out);
         while (true) {
             printf("%d\n", ticks);
             led2 = 0; // inverted logic
-            wait_ms(100);
+            wait_ms(50);
             led2 = 1;
-            wait_ms(900);
+            wait_ms(950);
             int n = demo(1, 2, 3, 4);
             if (n != 1 + 2 + 3 + 4)
                 printf("%d n? %d\n", ticks, n);
         }
     )
 
-    DEFINE_TASK(1, 1000,
+    DEFINE_TASK(1, 256,
         PinA<7> led3;
         led3.mode(Pinmode::out);
         while (true) {
             led3 = 0; // inverted logic
-            wait_ms(20);
+            wait_ms(140);
             led3 = 1;
-            wait_ms(260);
+            wait_ms(140);
         }
     )
 
-    DEFINE_TASK(2, 1000,
+    DEFINE_TASK(2, 256,
         wait_ms(1700);
         printf("%d 2: start listening\n", ticks);
         while (true) {
@@ -449,7 +449,7 @@ int main () {
         }
     )
 
-    DEFINE_TASK(3, 1000,
+    DEFINE_TASK(3, 256,
         Message msg;
         msg.request = 99;
         while (true) {
@@ -461,7 +461,7 @@ int main () {
         }
     )
 
-    DEFINE_TASK(4, 1000,
+    DEFINE_TASK(4, 256,
         Message msg;
         msg.request = 999;
         while (true) {
@@ -472,7 +472,7 @@ int main () {
         }
     )
 
-    DEFINE_TASK(5, 1000,
+    DEFINE_TASK(5, 256,
         while (true) {
             wait_ms(4321);
             Task::dump();
