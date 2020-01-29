@@ -155,9 +155,14 @@ struct Message {
 // Tasks and task management.
 
 class Task {
-public:
     uint32_t* pspSaved; // this MUST be the first field in each Task object
-    Task* next; // used in waiting tasks, i.e. when on some linked list
+    Task* blocking;     // set while waiting, to the task where we're queued
+    Task* pendingQueue; // tasks waiting for their call to be accepted
+    Task* finishQueue;  // tasks waiting for their call to be completed
+    Message* msgBuf;    // set while recv or reply wants a new message
+    uint32_t spare[2];  // pad the total task size to 32 bytes
+public:
+    Task* next;         // used in waiting tasks, i.e. when on some linked list
 
     static constexpr int MAX_TASKS = 25;
 
@@ -193,7 +198,6 @@ public:
                 return -1; // waiting on something else, reject this delivery
         }
 
-printf(" D %d: wfm %d ct %d\n", index(), waitingForMe, current().index());
         if (msgBuf == 0) // is this task ready to receive a message?
             return -1; // nope, can't deliver this message
 
@@ -228,11 +232,6 @@ printf(" D %d: wfm %d ct %d\n", index(), waitingForMe, current().index());
     static void dump ();
 
 private:
-    Task* blocking;     // set while waiting, to the task where we're queued
-    Task* pendingQueue; // tasks waiting for their call to be accepted
-    Task* finishQueue;  // tasks waiting for their call to be completed
-    Message* msgBuf;    // set while recv or reply wants a new message
-
     uint32_t index () const { return this - taskVec; }
 
     enum State { Unused, Suspended, Waiting, Runnable, Active };
@@ -246,7 +245,7 @@ private:
     }
 
     HardwareStackFrame& context () const {
-        return *(HardwareStackFrame*) (*pspSaved + 8);
+        return *(HardwareStackFrame*) (pspSaved + 8);
     }
 
     int suspend (Task* reason) {
