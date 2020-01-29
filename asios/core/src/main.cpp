@@ -101,6 +101,7 @@ void startTasks () {
     MMIO8(0xE000ED22) = 0xFF; // SHPR3->PRI_14 = 0xFF
     VTableRam().pend_sv = PendSV_Handler;
 
+    //asm volatile ("msr control, %0; isb" :: "r" (2)); // keep privileged mode
     asm volatile ("msr control, %0; isb" :: "r" (3)); // to unprivileged mode
 
     // launch main task, running in unprivileged thread mode from now on
@@ -281,6 +282,7 @@ enum {
     SYSCALL_ipcSend,
     SYSCALL_ipcCall,
     SYSCALL_ipcRecv,
+    SYSCALL_noop,
     SYSCALL_demo,
     SYSCALL_MAX
 };
@@ -294,6 +296,7 @@ enum {
 SYSCALL_STUB(ipcSend, (int dst, Message* msg))
 SYSCALL_STUB(ipcCall, (int dst, Message* msg))
 SYSCALL_STUB(ipcRecv, (Message* msg))
+SYSCALL_STUB(noop, ())
 SYSCALL_STUB(demo, (int a, int b, int c, int d))
 
 // TODO move everything up to the above enum to a C header for use in tasks
@@ -321,6 +324,11 @@ int syscall_ipcRecv (HardwareStackFrame* fp) {
     return Task::current().listen(msg);
 }
 
+// returns immediately, only used for timing tests
+int syscall_noop (HardwareStackFrame* fp) {
+    return 0;
+}
+
 // test syscall to check that args + return values are properly transferred
 int syscall_demo (HardwareStackFrame* fp) {
     printf("< demo %d %d %d %d >\n", fp->r[0], fp->r[1], fp->r[2], fp->r[3]);
@@ -332,6 +340,7 @@ int (*const syscallVec[])(HardwareStackFrame*) = {
     syscall_ipcSend,
     syscall_ipcCall,
     syscall_ipcRecv,
+    syscall_noop,
     syscall_demo,
 };
 
@@ -468,6 +477,12 @@ int main () {
     )
 
     DEFINE_TASK(3, 256,
+#if 0
+        DWT::start(); // bus faults unless in priviliged mode
+        noop();
+        DWT::stop();
+        printf("%d 3: noop %d cycles\n", ticks, DWT::count());
+#endif
         Message msg;
         msg.request = 99;
         while (true) {
