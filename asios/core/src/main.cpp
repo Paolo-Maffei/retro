@@ -56,22 +56,14 @@ void setupFaultHandlers () {
 // Task switcher, adapted from a superb example in Joseph Yiu's book, ch. 10:
 // "The Definitive Guide to Arm Cortex M3 and M4", 3rd edition, 2014.
 
-constexpr int MAX_TASKS = 25;
-uint32_t* pspVec[MAX_TASKS]; // Process Stack Pointers for each runnable task
-uint32_t currTask, nextTask; // index of current and next tasks
+uint32_t **currTask, **nextTask; // ptrs for saved PSPs of current & next tasks
 
 struct HardwareStackFrame {
     uint32_t r[4], r12, lr, pc, psr;
 };
 
-void initTask (int index, void* stackTop, void (*func)()) {
-    HardwareStackFrame* psp = (HardwareStackFrame*) stackTop - 1;
-    psp->pc = (uint32_t) func;
-    psp->psr = 0x01000000;
-    pspVec[index] = (uint32_t*) psp - 8; // room for the extra registers
-}
-
-// context switcher, no floating point support
+// context switcher, no floating point support TODO add mpu region save/restore
+// this code does not deal with tasks, just with two pointers to saved PSPs
 void PendSV_Handler () {
     //DWT::start();
     asm volatile ("\
@@ -79,24 +71,25 @@ void PendSV_Handler () {
         mrs    r0, psp      // get current process stack pointer value \n\
         stmdb  r0!,{r4-r11} // save R4 to R11 in task stack (8 regs) \n\
         ldr    r1,=currTask \n\
-        ldr    r2,[r1]      // get current task ID \n\
-        ldr    r3,=pspVec \n\
-        str    r0,[r3, r2, lsl #2] // save PSP value into pspVec \n\
+        ldr    r2,[r1]      // get current task ptr \n\
+        str    r0,[r2]      // save PSP value into current task \n\
         // load next context \n\
         ldr    r4,=nextTask \n\
-        ldr    r4,[r4]      // get next task ID \n\
+        ldr    r4,[r4]      // get next task ptr \n\
         str    r4,[r1]      // set currTask = nextTask \n\
-        ldr    r0,[r3, r4, lsl #2] // Load PSP value from pspVec \n\
+        ldr    r0,[r4]      // Load PSP value from next task \n\
         ldmia  r0!,{r4-r11} // load R4 to R11 from task stack (8 regs) \n\
         msr    psp, r0      // set PSP to next task \n\
     ");
     //DWT::stop();
 }
 
-void startTasks () {
+void startTasks (void* firstTask) {
+    currTask = nextTask = (uint32_t**) firstTask;
+
     // prepare to run all tasks in unprivileged thread mode, with one PSP
     // stack per task, keeping the original main stack for MSP/handler use
-    HardwareStackFrame* psp = (HardwareStackFrame*) (pspVec[currTask] + 8);
+    HardwareStackFrame* psp = (HardwareStackFrame*) (*currTask + 8);
     asm volatile ("msr psp, %0\n" :: "r" (psp + 1));
 
     // PendSV will be used to switch stacks, at the lowest interrupt priority
@@ -111,10 +104,10 @@ void startTasks () {
     panic("main task exit");
 }
 
-void changeTask (uint32_t index) {
+void changeTask (void* next) {
     // trigger a PendSV when back in thread mode to switch tasks
-    nextTask = index;
-    if (index != currTask)
+    nextTask = (uint32_t**) next;
+    if (nextTask != currTask)
         MMIO32(0xE000ED04) |= 1<<28; // SCB->ICSR |= PENDSVSET
 }
 
@@ -159,21 +152,36 @@ struct Message {
 };
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Tasks (with same index as pspVec) and task management.
+// Tasks and task management.
 
 class Task {
 public:
+    uint32_t* pspSaved; // this MUST be the first field in each Task object
     Task* next; // used in waiting tasks, i.e. when on some linked list
 
-    static Task& index (int num) { return taskVec[num]; }
-    static Task& current () { return taskVec[currTask]; }
+    static constexpr int MAX_TASKS = 25;
 
-    static int nextRunnable () {
-        int tidx = currTask;
+    void init (void* stackTop, void (*func)()) {
+        HardwareStackFrame* psp = (HardwareStackFrame*) stackTop - 1;
+        psp->pc = (uint32_t) func;
+        psp->psr = 0x01000000;
+        pspSaved = (uint32_t*) psp - 8; // room for the extra registers
+    }
+
+    static void start () {
+        startTasks(taskVec); // never returns
+    }
+
+    static Task& index (int num) { return taskVec[num]; }
+    static Task& current () { return *(Task*) currTask; }
+
+    static Task* nextRunnable () {
+        Task* tp = &current();
         do
-            tidx = (tidx + 1) % MAX_TASKS;
-        while (index(tidx).state() < Runnable);
-        return tidx;
+            if (++tp - taskVec >= MAX_TASKS)
+                tp = taskVec;
+        while (tp->state() < Runnable);
+        return tp;
     }
 
     // try to deliver a message to this task
@@ -185,11 +193,12 @@ public:
                 return -1; // waiting on something else, reject this delivery
         }
 
+printf(" D %d: wfm %d ct %d\n", index(), waitingForMe, current().index());
         if (msgBuf == 0) // is this task ready to receive a message?
             return -1; // nope, can't deliver this message
 
         *grab(msgBuf) = *msg; // copy message to destination
-        resume(waitingForMe ? 0 : currTask); // if it's a reply, return 0
+        resume(waitingForMe ? 0 : current().index()); // if a reply, return 0
         return 0; // successful delivery
     }
 
@@ -229,23 +238,22 @@ private:
     enum State { Unused, Suspended, Waiting, Runnable, Active };
 
     State state () const {
-        uint32_t tidx = index();
-        return pspVec[tidx] == 0 ? Unused :     // task is not in use
-                blocking == this ? Suspended :  // has to be resumed explicitly
-                   blocking != 0 ? Waiting :    // waiting on another task
-                tidx != currTask ? Runnable :   // will run when scheduled
-                                   Active;      // currently running
+        return pspSaved == 0 ? Unused :     // task is not in use
+            blocking == this ? Suspended :  // has to be resumed explicitly
+                    blocking ? Waiting :    // waiting on another task
+          this != &current() ? Runnable :   // will run when scheduled
+                               Active;      // currently running
     }
 
     HardwareStackFrame& context () const {
-        return *(HardwareStackFrame*) (pspVec[index()] + 8);
+        return *(HardwareStackFrame*) (*pspSaved + 8);
     }
 
     int suspend (Task* reason) {
-        if (index() != currTask) // could be supported, but no need so far
-            printf(">>> SUSPEND? index %d != curr %d\n", index(), currTask);
+        if (currTask != &pspSaved) // could be supported, but no need so far
+            printf(">>> SUSPEND? %08x != curr %08x\n", this, currTask);
 
-        nextTask = nextRunnable();
+        void* nextTask = nextRunnable();
         if (nextTask == currTask)
             panic("no runnable tasks left");
         changeTask(nextTask); // will trigger PendSV tail-chaining
@@ -262,19 +270,20 @@ private:
     static Task taskVec [];
 };
 
-Task Task::taskVec [MAX_TASKS];
+Task Task::taskVec [Task::MAX_TASKS];
 
 // a crude task dump for basic debugging, using console & printf
 void Task::dump () {
-    for (int i = 0; i < MAX_TASKS; ++i)
-        if (pspVec[i]) {
-            Task& t = Task::index(i);
+    for (int i = 0; i < MAX_TASKS; ++i) {
+        Task& t = Task::index(i);
+        if (t.pspSaved) {
             printf("[%03x] %2d: %c sp %08x",
-                    (uint32_t) &t & 0xFFF, i, "USWRA"[t.state()], pspVec[i]);
+                    (uint32_t) &t & 0xFFF, i, "USWRA"[t.state()], t.pspSaved);
             printf(" blkg %2d pend %08x fini %08x mbuf %08x\n",
                     t.blocking == 0 ? -1 : t.blocking->index(),
                     t.pendingQueue, t.finishQueue, t.msgBuf);
         }
+    }
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -367,11 +376,11 @@ void setupSystemCalls () {
         printf("< svc.%d psp %08x r0.%d lr %08x pc %08x psr %08x >\n",
                 req, psp, psp->r[0], psp->lr, psp->pc, psp->psr);
 #endif
-        // make pspVec[currTask] "resemble" a stack with full context
+        // make *currTask "resemble" a stack with full context
         // this is fiction, since r4..r11 (and fp regs) have *not* been saved
-        // note that pspVec[currTask] is redundant, the real psp is what counts
-        // now all valid pspVec entries have similar stack ptrs for kernel use
-        pspVec[currTask] = (uint32_t*) psp - 8;
+        // note that *currTask is not relevant, the real psp is what counts
+        // now all valid task entries have similar stack ptrs for kernel use
+        *currTask = (uint32_t*) psp - 8;
 
         psp->r[0] = req < SYSCALL_MAX ? syscallVec[req](psp) : -1;
     };
@@ -431,9 +440,9 @@ int main () {
         yield = false;
     };
 
-#define DEFINE_TASK(index, stacksize, body) \
-    alignas(8) static uint8_t stack_##index [stacksize]; \
-    initTask(index, stack_##index + stacksize, []() { body });
+#define DEFINE_TASK(num, stacksize, body) \
+    alignas(8) static uint8_t stack_##num [stacksize]; \
+    Task::index(num).init(stack_##num + stacksize, []() { body });
 
     DEFINE_TASK(0, 256,
         PinA<6> led2;
@@ -518,5 +527,5 @@ int main () {
         }
     )
 
-    startTasks(); // never returns
+    Task::start(); // never returns
 }
