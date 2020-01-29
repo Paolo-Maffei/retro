@@ -73,6 +73,7 @@ void initTask (int index, void* stackTop, void (*func)()) {
 
 // context switcher, no floating point support
 void PendSV_Handler () {
+    //DWT::start();
     asm volatile ("\
         // save current context \n\
         mrs    r0, psp      // get current process stack pointer value \n\
@@ -89,6 +90,7 @@ void PendSV_Handler () {
         ldmia  r0!,{r4-r11} // load R4 to R11 from task stack (8 regs) \n\
         msr    psp, r0      // set PSP to next task \n\
     ");
+    //DWT::stop();
 }
 
 void startTasks () {
@@ -331,6 +333,7 @@ int syscall_noop (HardwareStackFrame* fp) {
 
 // test syscall to check that args + return values are properly transferred
 int syscall_demo (HardwareStackFrame* fp) {
+    //printf("%d cycles\n", DWT::count());
     printf("< demo %d %d %d %d >\n", fp->r[0], fp->r[1], fp->r[2], fp->r[3]);
     return fp->r[0] + fp->r[1] + fp->r[2] + fp->r[3];
 }
