@@ -1,6 +1,24 @@
 #include <jee.h>
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// This stuff should probably be in JeeH, perhaps arch/stm32f4.h ?
+
+// cycle counts, see https://stackoverflow.com/questions/11530593/
+
+namespace Periph {
+    constexpr uint32_t dwt = 0xE0001000;
+}
+
+struct DWT {
+    constexpr static uint32_t ctrl   = Periph::dwt + 0x0;
+    constexpr static uint32_t cyccnt = Periph::dwt + 0x4;
+
+    static void start () { MMIO32(cyccnt) = 0; MMIO32(ctrl) |= 1<<0; }
+    static void stop () { MMIO32(ctrl) &= ~(1<<0); }
+    static uint32_t count () { return MMIO32(cyccnt); }
+};
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Console device and exception handler debugging.
 
 UartBufDev< PinA<9>, PinA<10> > console;
@@ -455,9 +473,12 @@ int main () {
         while (true) {
             wait_ms(1500);
             printf("%d 3: sending #%d\n", ticks, ++msg.request);
+            //DWT::start(); // bus faults unless in priviliged mode
             int e = ipcSend(2, &msg);
+            //DWT::stop();
             if (e != 0)
                 printf("%d 3: send? %d\n", ticks, e);
+            //printf("%d 3: %d cycles\n", ticks, DWT::count());
         }
     )
 
