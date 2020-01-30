@@ -62,6 +62,7 @@ struct HardwareStackFrame {
     uint32_t r[4], r12, lr, pc, psr;
 };
 
+// FIXME asm below assumes nextTask is placed just after currTask in memory
 uint32_t **currTask, **nextTask; // ptrs for saved PSPs of current & next tasks
 
 // context switcher, no floating point support TODO add mpu region save/restore
@@ -76,11 +77,10 @@ void PendSV_Handler () {
         ldr    r2,[r1]      // get current task ptr \n\
         str    r0,[r2]      // save PSP value into current task \n\
         // load next context \n\
-        ldr    r4,=nextTask \n\
-        ldr    r4,[r4]      // get next task ptr \n\
+        ldr    r4,[r1,#4]   // get next task ptr \n\
         str    r4,[r1]      // set currTask = nextTask \n\
         ldr    r0,[r4]      // Load PSP value from next task \n\
-        // TODO load appropriate MPU regions
+        // TODO load appropriate MPU regions \n\
         ldmia  r0!,{r4-r11} // load R4 to R11 from task stack (8 regs) \n\
         msr    psp, r0      // set PSP to next task \n\
     ");
