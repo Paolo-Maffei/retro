@@ -56,7 +56,10 @@ void setupFaultHandlers () {
 // Task switcher, adapted from a superb example in Joseph Yiu's book, ch. 10:
 // "The Definitive Guide to Arm Cortex M3 and M4", 3rd edition, 2014.
 
-constexpr int PSP_EXTRA = 8; // r4..r11 also saved
+// Note: currently, R4 to R11 are saved on the stack, but they could also be
+// stored in the task object, reducing PSP stack usage by 32 bytes. Not sure
+// which is better, and there's still the FPU regs to deal with (128 bytes!).
+constexpr int PSP_EXTRA = 8; // R4 to R11
 
 struct HardwareStackFrame {
     uint32_t r[4], r12, lr, pc, psr;
@@ -65,14 +68,14 @@ struct HardwareStackFrame {
 // FIXME asm below assumes nextTask is placed just after currTask in memory
 uint32_t **currTask, **nextTask; // ptrs for saved PSPs of current & next tasks
 
-// context switcher, includes adjusted MPU maps, no floating point support
+// context switcher, includes updating MPU maps, no floating point support
 // this does not need to deal with tasks, just pointers to its first 2 fields
 void PendSV_Handler () {
     //DWT::start();
     asm volatile ("\
         // save current context \n\
         mrs    r0, psp      // get current process stack pointer value \n\
-        stmdb  r0!,{r4-r11} // save R4 to R11 in task stack (8 regs) \n\
+        stmdb  r0!,{r4-r11} // push R4 to R11 to task stack (8 regs) \n\
         ldr    r1,=currTask \n\
         ldr    r2,[r1]      // get current task ptr \n\
         str    r0,[r2]      // save PSP value into current task \n\
@@ -81,10 +84,10 @@ void PendSV_Handler () {
         str    r4,[r1]      // set currTask = nextTask \n\
         ldr    r0,[r4]      // load PSP value from next task \n\
         ldr    r1,[r4,#4]   // load pointer to MPU regions \n\
-        ldmia  r1,{r2-r5}   // load R2 to R5 for 2 MPU regions (4 regs) \n\
+        ldm    r1,{r2-r5}   // load R2 to R5 for 2 MPU regions (4 regs) \n\
         ldr    r1,=0xE000ED9C // load address of first MPU RBAR reg \n\
         stm    r1,{r2-r5}   // store 2 new maps in MPU regs (4 regs) \n\
-        ldmia  r0!,{r4-r11} // load R4 to R11 from task stack (8 regs) \n\
+        ldmia  r0!,{r4-r11} // pop R4 to R11 from task stack (8 regs) \n\
         msr    psp, r0      // set PSP to next task \n\
     ");
     //DWT::stop();
