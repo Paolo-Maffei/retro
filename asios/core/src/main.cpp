@@ -308,8 +308,7 @@ void Task::dump () {
 // Note that main knows nothing about system calls, MPU, SVC, or IRQ handlers.
 
 extern void systemTask ();
-extern void setupSystemCalls();
-bool yield;
+static VTable* irqVec; // FIXME without static it crashes - mem corruption?
 
 int main () {
     console.init();
@@ -317,19 +316,7 @@ int main () {
     setupFaultHandlers();
     wait_ms(200); // give platformio's console time to connect
 
-    // allow SVC requests from thread state, but not from exception handlers
-    // (a SVC which can't be serviced right away will generate a hard fault)
-    // kernel code can now be interrupted by most handlers other than PendSV
-    MMIO8(0xE000ED1F) = 0xFF; // SHPR2->PRI_11 = 0xFF
-
-    setupSystemCalls();
-
-    VTableRam().systick = []() {
-        ++ticks;
-        if (yield || ticks % 20 == 0) // switch tasks every 20 ms
-            changeTask(Task::nextRunnable());
-        yield = false;
-    };
+    irqVec = &VTableRam(); // this call can't be used in thread mode TODO yuck
 
     alignas(8) static uint8_t stack_0 [256];
     Task::index(0).init(stack_0 + sizeof stack_0, systemTask);
@@ -349,7 +336,7 @@ enum {
     SYSCALL_MAX
 };
 
-// helper to define system call stubs with up to 4 typed arguments
+// helper to define system call stubs (up to 4 typed args, returning int)
 #define SYSCALL_STUB(name, args) \
     __attribute__((naked)) int name args \
     { asm ("svc %0; bx lr" :: "i" (SYSCALL_ ## name)); }
@@ -441,14 +428,6 @@ void SVC_Handler () {
     psp->r[0] = req < SYSCALL_MAX ? syscallVec[req](psp) : -1;
 }
 
-void setupSystemCalls () {
-    // use the C++11 compiler to verify a few design invariants
-    static_assert(SYSCALL_MAX == sizeof syscallVec / sizeof *syscallVec);
-    static_assert((sizeof (Task) & (sizeof (Task) - 1)) == 0); // power of 2
-
-    VTableRam().sv_call = SVC_Handler;
-}
-
 /* During a system call, only *part* of the context is saved (r0..psr), the
    remaining context (i.e. r4..r11 and optional fp regs) need to be preserved.
    This is ok, as context switches only happen in PendSV, i.e. outside SVCs. */
@@ -468,6 +447,7 @@ int syscall (...) {
 #endif
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Task zero, the special system task. It's the only one started by main().
 
 // just a quick hack to force a context switch on the next 1000 Hz clock tick
 // it causes a continous race of task switches, since each waiting task yields
@@ -477,7 +457,7 @@ int syscall (...) {
 //
 // TODO solution is to suspend delaying tasks so they don't eat up cpu cycles
 // but this needs some new code, to manage multiple timers and queues for them
-///bool yield;
+bool yield;
 
 #define wait_ms myWait // rename to avoid clashing with JeeH's version
 void wait_ms (uint32_t ms) {
@@ -488,12 +468,37 @@ void wait_ms (uint32_t ms) {
     }
 }
 
+void privilegedSetup () {
+    // allow SVC requests from thread state, but not from exception handlers
+    // (an SVC which can't be serviced right away will generate a hard fault)
+    // kernel code can now be interrupted by most handlers other than PendSV
+    MMIO8(0xE000ED1F) = 0xFF; // SHPR2->PRI_11 = 0xFF
+
+    // TODO set up all the MPU regions and enable the MPU for real protection
+}
+
 void systemTask () {
     // This is task #0, running in thread mode. Since the MPU has not yet been
     // enabled and this we have full R/W access to the interrupt vector in RAM,
     // we can *still* get to privileged mode, by injecting an exception handler
     // and then triggering it (i.e. a special SVC call). This will be used now
     // to complete a few more steps which require privileged mode.
+
+    irqVec->sv_call = privilegedSetup;
+    asm volatile ("svc #0"); // may be last chance to break out of thread mode
+
+    // use the C++11 compiler to verify a few design invariants
+    static_assert(SYSCALL_MAX == sizeof syscallVec / sizeof *syscallVec);
+    static_assert((sizeof (Task) & (sizeof (Task) - 1)) == 0); // power of 2
+
+    irqVec->sv_call = SVC_Handler;
+
+    irqVec->systick = []() {
+        ++ticks;
+        if (yield || ticks % 20 == 0) // switch tasks every 20 ms
+            changeTask(Task::nextRunnable());
+        yield = false;
+    };
 
 #define DEFINE_TASK(num, stacksize, body) \
 alignas(8) static uint8_t stack_##num [stacksize]; \
