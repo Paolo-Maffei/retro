@@ -355,7 +355,7 @@ SYSCALL_STUB(demo, (int a, int b, int c, int d))
 // TODO move everything up to the above enum to a C header for use in tasks
 
 // non-blocking message send, behaves as atomic test-and-set
-int syscall_ipcSend (HardwareStackFrame* sfp) {
+static int syscall_ipcSend (HardwareStackFrame* sfp) {
     int dst = sfp->r[0];
     Message* msg = (Message*) sfp->r[1];
     // ... validate dst and msg
@@ -363,7 +363,7 @@ int syscall_ipcSend (HardwareStackFrame* sfp) {
 }
 
 // blocking send + receive, used for request/reply sequences
-int syscall_ipcCall (HardwareStackFrame* sfp) {
+static int syscall_ipcCall (HardwareStackFrame* sfp) {
     int dst = sfp->r[0];
     Message* msg = (Message*) sfp->r[1];
     // ... validate dst and msg
@@ -371,19 +371,19 @@ int syscall_ipcCall (HardwareStackFrame* sfp) {
 }
 
 // blocking receive, used by drivers and servers
-int syscall_ipcRecv (HardwareStackFrame* sfp) {
+static int syscall_ipcRecv (HardwareStackFrame* sfp) {
     Message* msg = (Message*) sfp->r[0];
     // ... validate msg
     return Task::current().listen(msg);
 }
 
 // returns immediately, only used for timing tests
-int syscall_noop (HardwareStackFrame* sfp) {
+static int syscall_noop (HardwareStackFrame* sfp) {
     return 0;
 }
 
 // test syscall to check that args + return values are properly transferred
-int syscall_demo (HardwareStackFrame* sfp) {
+static int syscall_demo (HardwareStackFrame* sfp) {
     //printf("%d cycles\n", DWT::count());
     printf("<demo %d %d %d %d>\n", sfp->r[0], sfp->r[1], sfp->r[2], sfp->r[3]);
     return sfp->r[0] + sfp->r[1] + sfp->r[2] + sfp->r[3];
@@ -410,7 +410,7 @@ void SVC_Handler () {
     // now all valid task entries have similar stack ptrs for kernel use
     *currTask = (uint32_t*) psp - PSP_EXTRA;
 
-    // fully-automated task categorisation: the first SVC call made by a
+    // fully-automated task categorisation: the first SVC request made by a
     // task will configure its type, and therefore its system permissions
     Task& t = Task::current();
     if (t.type == Task::Early)
@@ -424,16 +424,16 @@ void SVC_Handler () {
     // there's no need to enforce these permissions right now, that can be
     // done in the ipc calls and in task #0, which handles all other calls
 
-    int r = -1;
+    int result = -1;
     switch (req) {
-        case SYSCALL_ipcSend: r = syscall_ipcSend(psp); break;
-        case SYSCALL_ipcCall: r = syscall_ipcCall(psp); break;
-        case SYSCALL_ipcRecv: r = syscall_ipcRecv(psp); break;
-        case SYSCALL_noop:    r = syscall_noop(psp);    break;
-        case SYSCALL_demo:    r = syscall_demo(psp);    break;
+        case SYSCALL_ipcSend: result = syscall_ipcSend(psp); break;
+        case SYSCALL_ipcCall: result = syscall_ipcCall(psp); break;
+        case SYSCALL_ipcRecv: result = syscall_ipcRecv(psp); break;
+        case SYSCALL_noop:    result = syscall_noop(psp);    break;
+        case SYSCALL_demo:    result = syscall_demo(psp);    break;
         default: ; // TODO wrap into an ipcSend to task #0
     }
-    psp->r[0] = r;
+    psp->r[0] = result; // save svc result in the caller's saved r0
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
