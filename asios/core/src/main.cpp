@@ -301,10 +301,10 @@ void Task::dump () {
 // System call handlers and dispatch vector. These always run in SVC context.
 
 enum {
+    SYSCALL_noop,
     SYSCALL_ipcSend,
     SYSCALL_ipcCall,
     SYSCALL_ipcRecv,
-    SYSCALL_noop,
     SYSCALL_demo,
     SYSCALL_MAX
 };
@@ -315,13 +315,18 @@ enum {
     { asm ("svc %0; bx lr" :: "i" (SYSCALL_ ## name)); }
 
 // these are all the system call stubs
+SYSCALL_STUB(noop, ())
 SYSCALL_STUB(ipcSend, (int dst, Message* msg))
 SYSCALL_STUB(ipcCall, (int dst, Message* msg))
 SYSCALL_STUB(ipcRecv, (Message* msg))
-SYSCALL_STUB(noop, ())
 SYSCALL_STUB(demo, (int a, int b, int c, int d))
 
 // TODO move everything up to the above enum to a C header for use in tasks
+
+// returns immediately, only used for timing tests
+int syscall_noop (HardwareStackFrame* fp) {
+    return 0;
+}
 
 // non-blocking message send, behaves as atomic test-and-set
 int syscall_ipcSend (HardwareStackFrame* fp) {
@@ -346,11 +351,6 @@ int syscall_ipcRecv (HardwareStackFrame* fp) {
     return Task::current().listen(msg);
 }
 
-// returns immediately, only used for timing tests
-int syscall_noop (HardwareStackFrame* fp) {
-    return 0;
-}
-
 // test syscall to check that args + return values are properly transferred
 int syscall_demo (HardwareStackFrame* fp) {
     //printf("%d cycles\n", DWT::count());
@@ -360,10 +360,10 @@ int syscall_demo (HardwareStackFrame* fp) {
 
 // these stubs must match the exact order and number of SYSCALL_* enums
 int (*const syscallVec[])(HardwareStackFrame*) = {
+    syscall_noop,
     syscall_ipcSend,
     syscall_ipcCall,
     syscall_ipcRecv,
-    syscall_noop,
     syscall_demo,
 };
 
