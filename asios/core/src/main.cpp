@@ -318,6 +318,7 @@ int main () {
 
     irqVec = &VTableRam(); // this call can't be used in thread mode TODO yuck
 
+    // set up the stack and initialize the very first task
     alignas(8) static uint8_t stack_0 [256];
     Task::index(0).init(stack_0 + sizeof stack_0, systemTask);
 
@@ -464,18 +465,18 @@ void privilegedSetup () {
 }
 
 void systemTask () {
-    // This is task #0, running in thread mode. Since the MPU has not yet been
-    // enabled and this we have full R/W access to the interrupt vector in RAM,
-    // we can *still* get to privileged mode, by injecting an exception handler
-    // and then triggering it (i.e. a special SVC call). This will be used now
-    // to complete a few more steps which require privileged mode.
-
-    irqVec->sv_call = privilegedSetup;
-    asm volatile ("svc #0"); // may be last chance to break out of thread mode
-
     // use the C++11 compiler to verify a few design invariants
     static_assert(SYSCALL_MAX == sizeof syscallVec / sizeof *syscallVec);
     static_assert((sizeof (Task) & (sizeof (Task) - 1)) == 0); // power of 2
+
+    // This is task #0, running in thread mode. Since the MPU has not yet been
+    // enabled and we have full R/W access to the interrupt vector in RAM, we
+    // can still get to privileged mode by installing an exception handler and
+    // then triggering it (i.e. through an SVC call). This is used here to fix
+    // up a few details which can't be done in unprivileged mode.
+
+    irqVec->sv_call = privilegedSetup;
+    asm volatile ("svc #0"); // may be last chance to break out of thread mode
 
     irqVec->sv_call = SVC_Handler;
 
