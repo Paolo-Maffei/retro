@@ -105,7 +105,7 @@ void startTasks (void* firstTask) {
     MMIO8(0xE000ED22) = 0xFF; // SHPR3->PRI_14 = 0xFF
     VTableRam().pend_sv = PendSV_Handler;
 
-#if 0
+#if 1
     asm volatile ("msr control, %0; isb" :: "r" (3)); // to unprivileged mode
 #else
     asm volatile ("msr control, %0; isb" :: "r" (2)); // keep privileged mode
@@ -304,6 +304,40 @@ void Task::dump () {
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Main entry point: set up the system task (task #0) and start multi-tasking.
+// Note that main knows nothing about system calls, MPU, SVC, or IRQ handlers.
+
+extern void systemTask ();
+extern void setupSystemCalls();
+bool yield;
+
+int main () {
+    console.init();
+    console.baud(115200, fullSpeedClock()/2);
+    setupFaultHandlers();
+    wait_ms(200); // give platformio's console time to connect
+
+    // allow SVC requests from thread state, but not from exception handlers
+    // (a SVC which can't be serviced right away will generate a hard fault)
+    // kernel code can now be interrupted by most handlers other than PendSV
+    MMIO8(0xE000ED1F) = 0xFF; // SHPR2->PRI_11 = 0xFF
+
+    setupSystemCalls();
+
+    VTableRam().systick = []() {
+        ++ticks;
+        if (yield || ticks % 20 == 0) // switch tasks every 20 ms
+            changeTask(Task::nextRunnable());
+        yield = false;
+    };
+
+    alignas(8) static uint8_t stack_0 [256];
+    Task::index(0).init(stack_0 + sizeof stack_0, systemTask);
+
+    Task::run(); // the big leap into unprivileged thread mode, never returns
+}
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // System call handlers and dispatch vector. These always run in SVC context.
 
 enum {
@@ -376,52 +410,50 @@ int (*const syscallVec[])(HardwareStackFrame*) = {
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // SVC system call interface, required to switch from thread to handler state.
 
+void SVC_Handler () {
+    HardwareStackFrame* psp;
+    asm ("mrs %0, psp" : "=r" (psp));
+    uint8_t req = ((uint8_t*) (psp->pc))[-2];
+#if 0
+    printf("< svc.%d psp %08x r0.%d lr %08x pc %08x psr %08x >\n",
+            req, psp, psp->r[0], psp->lr, psp->pc, psp->psr);
+#endif
+    // first of all, make *currTask "resemble" a stack with full context
+    // this is fiction, since R4-R11 (and FP regs) have *not* been saved
+    // note that *currTask is not authoritative, h/w uses the real psp
+    // now all valid task entries have similar stack ptrs for kernel use
+    *currTask = (uint32_t*) psp - PSP_EXTRA;
+
+    // fully-automated task categorisation: the first SVC call made by a
+    // task will configure its type, and therefore its system permissions
+    Task& t = Task::current();
+    if (t.type == Task::Early)
+        switch (req) {
+            case SYSCALL_ipcSend: break; // no change
+            case SYSCALL_ipcCall: t.type = Task::Driver; break;
+            case SYSCALL_ipcRecv: t.type = Task::Server; break;
+            default: t.type = Task::App; break;
+        }
+
+    // there's no need to enforce these permissions right now, that can be
+    // done in the ipc calls and in task #0, which handles all other calls
+
+    psp->r[0] = req < SYSCALL_MAX ? syscallVec[req](psp) : -1;
+}
+
 void setupSystemCalls () {
     // use the C++11 compiler to verify a few design invariants
     static_assert(SYSCALL_MAX == sizeof syscallVec / sizeof *syscallVec);
     static_assert((sizeof (Task) & (sizeof (Task) - 1)) == 0); // power of 2
 
-    // allow SVC requests from thread state, but not from exception handlers
-    // (a SVC which can't be serviced right away will generate a hard fault)
-    // kernel code can now be interrupted by most handlers other than PendSV
-    MMIO8(0xE000ED1F) = 0xFF; // SHPR2->PRI_11 = 0xFF
-
-    VTableRam().sv_call = []() {
-        HardwareStackFrame* psp;
-        asm ("mrs %0, psp" : "=r" (psp));
-        uint8_t req = ((uint8_t*) (psp->pc))[-2];
-#if 0
-        printf("< svc.%d psp %08x r0.%d lr %08x pc %08x psr %08x >\n",
-                req, psp, psp->r[0], psp->lr, psp->pc, psp->psr);
-#endif
-        // first of all, make *currTask "resemble" a stack with full context
-        // this is fiction, since R4-R11 (and FP regs) have *not* been saved
-        // note that *currTask is not authoritative, h/w uses the real psp
-        // now all valid task entries have similar stack ptrs for kernel use
-        *currTask = (uint32_t*) psp - PSP_EXTRA;
-
-        // fully-automated task categorisation: the first SVC call made by a
-        // task will configure its type, and therefore its system permissions
-        Task& t = Task::current();
-        if (t.type == Task::Early)
-            switch (req) {
-                case SYSCALL_ipcSend: break; // no change
-                case SYSCALL_ipcCall: t.type = Task::Driver; break;
-                case SYSCALL_ipcRecv: t.type = Task::Server; break;
-                default: t.type = Task::App; break;
-            }
-
-        // there's no need to enforce these permissions right now, that can be
-        // done in the ipc calls and in task #0, which handles all system calls
-
-        psp->r[0] = req < SYSCALL_MAX ? syscallVec[req](psp) : -1;
-    };
+    VTableRam().sv_call = SVC_Handler;
 }
 
 /* During a system call, only *part* of the context is saved (r0..psr), the
    remaining context (i.e. r4..r11 and optional fp regs) need to be preserved.
    This is ok, as context switches only happen in PendSV, i.e. outside SVCs. */
 
+#if 0
 __attribute__((naked)) // avoid warning about missing return value
 int syscall (...) {
     asm volatile ("svc #0; bx lr");
@@ -433,6 +465,7 @@ __attribute__((naked)) // avoid warning about missing return value
 int syscall (...) {
     asm volatile ("svc %0; bx lr" :: "i" (N));
 }
+#endif
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -444,8 +477,7 @@ int syscall (...) {
 //
 // TODO solution is to suspend delaying tasks so they don't eat up cpu cycles
 // but this needs some new code, to manage multiple timers and queues for them
-
-bool yield;
+///bool yield;
 
 #define wait_ms myWait // rename to avoid clashing with JeeH's version
 void wait_ms (uint32_t ms) {
@@ -456,40 +488,16 @@ void wait_ms (uint32_t ms) {
     }
 }
 
-int main () {
-    const auto hz = fullSpeedClock();
-    console.init();
-    console.baud(115200, hz/2);
-    wait_ms(200); // give platformio's console time to connect
-
-    setupFaultHandlers();
-    setupSystemCalls();
-
-    VTableRam().systick = []() {
-        ++ticks;
-        if (yield || ticks % 20 == 0) // switch tasks every 20 ms
-            changeTask(Task::nextRunnable());
-        yield = false;
-    };
+void systemTask () {
+    // This is task #0, running in thread mode. Since the MPU has not yet been
+    // enabled and this we have full R/W access to the interrupt vector in RAM,
+    // we can *still* get to privileged mode, by injecting an exception handler
+    // and then triggering it (i.e. a special SVC call). This will be used now
+    // to complete a few more steps which require privileged mode.
 
 #define DEFINE_TASK(num, stacksize, body) \
-    alignas(8) static uint8_t stack_##num [stacksize]; \
-    Task::index(num).init(stack_##num + stacksize, []() { body });
-
-    DEFINE_TASK(0, 256,
-        PinA<6> led2;
-        led2.mode(Pinmode::out);
-        while (true) {
-            printf("%d\n", ticks);
-            led2 = 0; // inverted logic
-            wait_ms(50);
-            led2 = 1;
-            wait_ms(950);
-            int n = demo(1, 2, 3, 4);
-            if (n != 1 + 2 + 3 + 4)
-                printf("%d n? %d\n", ticks, n);
-        }
-    )
+alignas(8) static uint8_t stack_##num [stacksize]; \
+Task::index(num).init(stack_##num + stacksize, []() { body });
 
     DEFINE_TASK(1, 256,
         PinA<7> led3;
@@ -526,7 +534,7 @@ int main () {
         while (true) {
             wait_ms(1500);
             printf("%d 3: sending #%d\n", ticks, ++msg.request);
-#if 0
+#if 1
             int e = ipcSend(2, &msg);
 #else
             DWT::start(); // bus faults unless in priviliged mode
@@ -562,5 +570,16 @@ int main () {
         }
     )
 
-    Task::run(); // never returns
+    PinA<6> led2;
+    led2.mode(Pinmode::out);
+    while (true) {
+        printf("%d\n", ticks);
+        led2 = 0; // inverted logic
+        wait_ms(50);
+        led2 = 1;
+        wait_ms(950);
+        int n = demo(1, 2, 3, 4);
+        if (n != 1 + 2 + 3 + 4)
+            printf("%d n? %d\n", ticks, n);
+    }
 }
