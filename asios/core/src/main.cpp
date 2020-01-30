@@ -56,11 +56,13 @@ void setupFaultHandlers () {
 // Task switcher, adapted from a superb example in Joseph Yiu's book, ch. 10:
 // "The Definitive Guide to Arm Cortex M3 and M4", 3rd edition, 2014.
 
-uint32_t **currTask, **nextTask; // ptrs for saved PSPs of current & next tasks
+constexpr int PSP_EXTRA = 8; // r4..r11 also saved
 
 struct HardwareStackFrame {
     uint32_t r[4], r12, lr, pc, psr;
 };
+
+uint32_t **currTask, **nextTask; // ptrs for saved PSPs of current & next tasks
 
 // context switcher, no floating point support TODO add mpu region save/restore
 // this code does not deal with tasks, just with two pointers to saved PSPs
@@ -70,6 +72,7 @@ void PendSV_Handler () {
         // save current context \n\
         mrs    r0, psp      // get current process stack pointer value \n\
         stmdb  r0!,{r4-r11} // save R4 to R11 in task stack (8 regs) \n\
+        // TODO save MPU regions
         ldr    r1,=currTask \n\
         ldr    r2,[r1]      // get current task ptr \n\
         str    r0,[r2]      // save PSP value into current task \n\
@@ -78,6 +81,7 @@ void PendSV_Handler () {
         ldr    r4,[r4]      // get next task ptr \n\
         str    r4,[r1]      // set currTask = nextTask \n\
         ldr    r0,[r4]      // Load PSP value from next task \n\
+        // TODO restore MPU regions
         ldmia  r0!,{r4-r11} // load R4 to R11 from task stack (8 regs) \n\
         msr    psp, r0      // set PSP to next task \n\
     ");
@@ -89,7 +93,7 @@ void startTasks (void* firstTask) {
 
     // prepare to run all tasks in unprivileged thread mode, with one PSP
     // stack per task, keeping the original main stack for MSP/handler use
-    HardwareStackFrame* psp = (HardwareStackFrame*) (*currTask + 8);
+    HardwareStackFrame* psp = (HardwareStackFrame*) (*currTask + PSP_EXTRA);
     asm volatile ("msr psp, %0\n" :: "r" (psp + 1));
 
     // PendSV will be used to switch stacks, at the lowest interrupt priority
@@ -170,7 +174,8 @@ public:
         HardwareStackFrame* psp = (HardwareStackFrame*) stackTop - 1;
         psp->pc = (uint32_t) func;
         psp->psr = 0x01000000;
-        pspSaved = (uint32_t*) psp - 8; // room for the extra registers
+        pspSaved = (uint32_t*) psp - PSP_EXTRA;
+        // TODO also set up MPU regions
     }
 
     static void start () {
@@ -245,7 +250,7 @@ private:
     }
 
     HardwareStackFrame& context () const {
-        return *(HardwareStackFrame*) (pspSaved + 8);
+        return *(HardwareStackFrame*) (pspSaved + PSP_EXTRA);
     }
 
     int suspend (Task* reason) {
@@ -379,7 +384,7 @@ void setupSystemCalls () {
         // this is fiction, since r4..r11 (and fp regs) have *not* been saved
         // note that *currTask is not relevant, the real psp is what counts
         // now all valid task entries have similar stack ptrs for kernel use
-        *currTask = (uint32_t*) psp - 8;
+        *currTask = (uint32_t*) psp - PSP_EXTRA;
 
         psp->r[0] = req < SYSCALL_MAX ? syscallVec[req](psp) : -1;
     };
