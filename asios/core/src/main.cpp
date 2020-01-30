@@ -69,7 +69,7 @@ struct HardwareStackFrame {
 uint32_t **currTask, **nextTask; // ptrs for saved PSPs of current & next tasks
 
 // context switcher, includes updating MPU maps, no floating point support
-// this does not need to deal with tasks, just pointers to its first 2 fields
+// this does not need to know about tasks, just pointers to its first 2 fields
 void PendSV_Handler () {
     //DWT::start();
     asm volatile ("\
@@ -164,13 +164,13 @@ struct Message {
 // Tasks and task management.
 
 class Task {
-    uint32_t* pspSaved; // this MUST be first in each Task object
-    uint32_t* mpuMaps;  // this MUST be second in each Task object
-    Task* blocking;     // set while waiting, to the task where we're queued
+    uint32_t* pspSaved; // MUST be first in task objects, see PendSV_Handler
+    uint32_t* mpuMaps;  // MUST be second in task objects, see PendSV_Handler
+    Task* blocking;     // set while waiting, to task we're queued on, or self
     Task* pendingQueue; // tasks waiting for their call to be accepted
     Task* finishQueue;  // tasks waiting for their call to be completed
-    Message* msgBuf;    // set while recv or reply wants a new message
-    uint32_t spare;     // pad the total task size to 32 bytes
+    Message* msgBuf;    // set while recv or reply can take a new message
+    uint8_t spare[4];   // pad the total task size to 32 bytes
 public:
     Task* next;         // used in waiting tasks, i.e. when on some linked list
 
@@ -185,7 +185,7 @@ public:
         mpuMaps = (uint32_t*) dummyMaps;
     }
 
-    static void start () {
+    static void run () {
         startTasks(taskVec); // never returns
     }
 
@@ -281,7 +281,7 @@ private:
     static Task taskVec [];
 };
 
-Task Task::taskVec [Task::MAX_TASKS];
+Task Task::taskVec [MAX_TASKS];
 
 // a crude task dump for basic debugging, using console & printf
 void Task::dump () {
@@ -538,5 +538,5 @@ int main () {
         }
     )
 
-    Task::start(); // never returns
+    Task::run(); // never returns
 }

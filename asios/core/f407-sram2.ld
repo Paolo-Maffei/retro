@@ -1,21 +1,16 @@
-/*
- *
- * Automatically generated file
- * PlatformIO default linker script template for STM32 F1/F2/F3/F4/F7/L0/L1/L4
- *
- */
+/* Adapted from PlatformIO default linker script template for STM32 F4/F7/... */
 
 /* Entry Point */
 ENTRY(Reset_Handler)
 
 /* Generate a link error if stack doesn't fit into RAM */
-_Min_Stack_Size = 0x400;     /* required amount of stack */
+_Min_Stack_Size = 0x800;     /* required amount of stack */
 
 /* Specify the memory areas */
 MEMORY
 {
     SRAM2 (xrw)     : ORIGIN = 0x2001C000, LENGTH = 16K
-    FLASH (rx)      : ORIGIN = 0x08000000, LENGTH = 512K
+    FLASH (rx)      : ORIGIN = 0x08000000, LENGTH = 16K
 }
 
 /* Highest address of the user mode stack */ 
