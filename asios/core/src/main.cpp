@@ -183,6 +183,9 @@ public:
     static constexpr int MAX_TASKS = 25;
 
     void init (void* stackTop, void (*func)()) {
+        // use the C++11 compiler to verify a design choice
+        static_assert((sizeof *this & (sizeof *this - 1)) == 0); // power of 2
+
         HardwareStackFrame* psp = (HardwareStackFrame*) stackTop - 1;
         psp->pc = (uint32_t) func;
         psp->psr = 0x01000000;
@@ -352,48 +355,39 @@ SYSCALL_STUB(demo, (int a, int b, int c, int d))
 // TODO move everything up to the above enum to a C header for use in tasks
 
 // non-blocking message send, behaves as atomic test-and-set
-int syscall_ipcSend (HardwareStackFrame* fp) {
-    int dst = fp->r[0];
-    Message* msg = (Message*) fp->r[1];
+int syscall_ipcSend (HardwareStackFrame* sfp) {
+    int dst = sfp->r[0];
+    Message* msg = (Message*) sfp->r[1];
     // ... validate dst and msg
     return Task::index(dst).deliver(msg);
 }
 
 // blocking send + receive, used for request/reply sequences
-int syscall_ipcCall (HardwareStackFrame* fp) {
-    int dst = fp->r[0];
-    Message* msg = (Message*) fp->r[1];
+int syscall_ipcCall (HardwareStackFrame* sfp) {
+    int dst = sfp->r[0];
+    Message* msg = (Message*) sfp->r[1];
     // ... validate dst and msg
     return Task::index(dst).replyTo(msg);
 }
 
 // blocking receive, used by drivers and servers
-int syscall_ipcRecv (HardwareStackFrame* fp) {
-    Message* msg = (Message*) fp->r[0];
+int syscall_ipcRecv (HardwareStackFrame* sfp) {
+    Message* msg = (Message*) sfp->r[0];
     // ... validate msg
     return Task::current().listen(msg);
 }
 
 // returns immediately, only used for timing tests
-int syscall_noop (HardwareStackFrame* fp) {
+int syscall_noop (HardwareStackFrame* sfp) {
     return 0;
 }
 
 // test syscall to check that args + return values are properly transferred
-int syscall_demo (HardwareStackFrame* fp) {
+int syscall_demo (HardwareStackFrame* sfp) {
     //printf("%d cycles\n", DWT::count());
-    printf("< demo %d %d %d %d >\n", fp->r[0], fp->r[1], fp->r[2], fp->r[3]);
-    return fp->r[0] + fp->r[1] + fp->r[2] + fp->r[3];
+    printf("<demo %d %d %d %d>\n", sfp->r[0], sfp->r[1], sfp->r[2], sfp->r[3]);
+    return sfp->r[0] + sfp->r[1] + sfp->r[2] + sfp->r[3];
 }
-
-// these stubs must match the exact order and number of SYSCALL_* enums
-int (*const syscallVec[])(HardwareStackFrame*) = {
-    syscall_ipcSend,
-    syscall_ipcCall,
-    syscall_ipcRecv,
-    syscall_noop,
-    syscall_demo,
-};
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // SVC system call interface, required to switch from thread to handler state.
@@ -430,12 +424,22 @@ void SVC_Handler () {
     // there's no need to enforce these permissions right now, that can be
     // done in the ipc calls and in task #0, which handles all other calls
 
-    psp->r[0] = req < SYSCALL_MAX ? syscallVec[req](psp) : -1;
+    int r = -1;
+    switch (req) {
+        case SYSCALL_ipcSend: r = syscall_ipcSend(psp); break;
+        case SYSCALL_ipcCall: r = syscall_ipcCall(psp); break;
+        case SYSCALL_ipcRecv: r = syscall_ipcRecv(psp); break;
+        case SYSCALL_noop:    r = syscall_noop(psp);    break;
+        case SYSCALL_demo:    r = syscall_demo(psp);    break;
+        default: ; // TODO wrap into an ipcSend to task #0
+    }
+    psp->r[0] = r;
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Task zero, the special system task. It's the only one started by main().
 
+#if 1
 // just a quick hack to force a context switch on the next 1000 Hz clock tick
 // it causes a continous race of task switches, since each waiting task yields
 // ... but it does have the desired effect of wait_ms letting other tasks run
@@ -446,14 +450,15 @@ void SVC_Handler () {
 // but this needs some new code, to manage multiple timers and queues for them
 bool yield;
 
-#define wait_ms myWait // rename to avoid clashing with JeeH's version
-void wait_ms (uint32_t ms) {
+// use a different name to avoid clashing with JeeH's "wait_ms" version
+void msWait (uint32_t ms) {
     uint32_t start = ticks;
     while ((uint32_t) (ticks - start) < ms) {
         yield = true;
         __asm("wfi");  // reduce power consumption
     }
 }
+#endif
 
 void privilegedSetup () {
     // allow SVC requests from thread state, but not from exception handlers
@@ -461,14 +466,10 @@ void privilegedSetup () {
     // kernel code can now be interrupted by most handlers other than PendSV
     MMIO8(0xE000ED1F) = 0xFF; // SHPR2->PRI_11 = 0xFF
 
-    // TODO set up all the MPU regions and enable the MPU for real protection
+    // TODO set up all the MPU regions and enable the MPU's memory protection
 }
 
 void systemTask () {
-    // use the C++11 compiler to verify a few design invariants
-    static_assert(SYSCALL_MAX == sizeof syscallVec / sizeof *syscallVec);
-    static_assert((sizeof (Task) & (sizeof (Task) - 1)) == 0); // power of 2
-
     // This is task #0, running in thread mode. Since the MPU has not yet been
     // enabled and we have full R/W access to the interrupt vector in RAM, we
     // can still get to privileged mode by installing an exception handler and
@@ -496,21 +497,21 @@ Task::index(num).init(stack_##num + stacksize, []() { body });
         led3.mode(Pinmode::out);
         while (true) {
             led3 = 0; // inverted logic
-            wait_ms(140);
+            msWait(140);
             led3 = 1;
-            wait_ms(140);
+            msWait(140);
         }
     )
 
     DEFINE_TASK(2, 256,
-        wait_ms(1700);
+        msWait(1000);
         printf("%d 2: start listening\n", ticks);
         while (true) {
             Message msg;
             int src = ipcRecv(&msg);
             printf("%d 2: received #%d from %d\n", ticks, msg.request, src);
             if (src == 4) {
-                wait_ms(50);
+                msWait(50);
                 msg.request = -msg.request;
                 printf("%d 2: about to reply #%d\n", ticks, msg.request);
                 int e = ipcSend(src, &msg);
@@ -524,7 +525,7 @@ Task::index(num).init(stack_##num + stacksize, []() { body });
         Message msg;
         msg.request = 99;
         while (true) {
-            wait_ms(1500);
+            msWait(500);
             printf("%d 3: sending #%d\n", ticks, ++msg.request);
 #if 1
             int e = ipcSend(2, &msg);
@@ -541,6 +542,7 @@ Task::index(num).init(stack_##num + stacksize, []() { body });
 #endif
             if (e != 0)
                 printf("%d 3: send? %d\n", ticks, e);
+            msWait(1000);
         }
     )
 
@@ -548,17 +550,19 @@ Task::index(num).init(stack_##num + stacksize, []() { body });
         Message msg;
         msg.request = 999;
         while (true) {
-            wait_ms(4000);
+            msWait(2000);
             printf("%d 4: calling #%d\n", ticks, ++msg.request);
             int e = ipcCall(2, &msg);
             printf("%d 4: result #%d status %d\n", ticks, msg.request, e);
+            msWait(2000);
         }
     )
 
     DEFINE_TASK(5, 256,
+        msWait(300);
         while (true) {
-            wait_ms(4321);
             Task::dump();
+            msWait(4321);
         }
     )
 
@@ -567,9 +571,9 @@ Task::index(num).init(stack_##num + stacksize, []() { body });
     while (true) {
         printf("%d\n", ticks);
         led2 = 0; // inverted logic
-        wait_ms(50);
+        msWait(50);
         led2 = 1;
-        wait_ms(950);
+        msWait(950);
         int n = demo(1, 2, 3, 4);
         if (n != 1 + 2 + 3 + 4)
             printf("%d n? %d\n", ticks, n);
