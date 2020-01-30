@@ -65,7 +65,7 @@ struct HardwareStackFrame {
     uint32_t r[4], r12, lr, pc, psr;
 };
 
-// FIXME asm below assumes nextTask is placed just after currTask in memory
+// XXX asm below assumes nextTask is placed just after currTask in memory
 uint32_t **currTask, **nextTask; // ptrs for saved PSPs of current & next tasks
 
 // context switcher, includes updating MPU maps, no floating point support
@@ -159,7 +159,7 @@ bool listRemove (T*& list, T& item) {
 // Message-based IPC.
 
 struct Message {
-    int request;
+    uint8_t req;
     uint32_t* args;
     int filler [14];
 };
@@ -168,18 +168,19 @@ struct Message {
 // Tasks and task management.
 
 class Task {
+public:
     uint32_t* pspSaved; // MUST be first in task objects, see PendSV_Handler
     uint32_t* mpuMaps;  // MUST be second in task objects, see PendSV_Handler
     Task* blocking;     // set while waiting, to task we're queued on, or self
     Task* pendingQueue; // tasks waiting for their call to be accepted
     Task* finishQueue;  // tasks waiting for their call to be completed
     Message* msgBuf;    // set while recv or reply can take a new message
-    uint8_t spare[3];   // pad the total task size to 32 bytes
-public:
+    Task* next;         // used in waiting tasks, i.e. when on some linked list
+
     enum { Early, App, Server, Driver }; // type of task
     uint8_t type :2;    // set once the first SVC call is made
 
-    Task* next;         // used in waiting tasks, i.e. when on some linked list
+    uint8_t spare[3];   // pad the total task size to 32 bytes
 
     static constexpr int MAX_TASKS = 25;
 
@@ -188,7 +189,7 @@ public:
         static_assert(sizeof (Message) == 64); // fixed and known message size
         static_assert((sizeof *this & (sizeof *this - 1)) == 0); // power of 2
 
-        extern int exit (int); // forward declaration TODO yuck
+        extern int exit (int); // forward declaration XXX yuck
 
         HardwareStackFrame* psp = (HardwareStackFrame*) stackTop - 1;
         psp->lr = (uint32_t) exit;
@@ -316,7 +317,7 @@ void Task::dump () {
 // Note that main knows nothing about system calls, MPU, SVC, or IRQ handlers.
 
 extern void systemTask ();
-static VTable* irqVec; // FIXME without static it crashes - mem corruption?
+static VTable* irqVec; // without static it crashes FIXME stray mem corruption?
 
 int main () {
     console.init();
@@ -324,7 +325,7 @@ int main () {
     setupFaultHandlers();
     wait_ms(200); // give platformio's console time to connect
 
-    irqVec = &VTableRam(); // this call can't be used in thread mode TODO yuck
+    irqVec = &VTableRam(); // this call can't be used in thread mode XXX yuck
 
     // set up the stack and initialize the very first task
     alignas(8) static uint8_t stack_0 [256];
@@ -384,14 +385,9 @@ static int syscall_ipcRecv (HardwareStackFrame* sfp) {
     return Task::current().listen(msg);
 }
 
-// returns immediately, only used for timing tests
-static int syscall_noop (HardwareStackFrame* sfp) {
-    //printf("%d cycles\n", DWT::count());
-    return 0;
-}
-
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // SVC system call interface, required to switch from thread to handler state.
+// Only an IPC call is processed right away, the rest is sent to task #0.
 //
 // During a system call, only *part* of the context is saved (r0..psr), the
 // remaining context (i.e. R4-R11 and optional FP regs) need to be preserved.
@@ -425,22 +421,34 @@ void SVC_Handler () {
     // there's no need to enforce these permissions right now, that can be
     // done in the ipc calls and in task #0, which handles all other calls
 
-    int reply = -1;
     switch (req) {
-        case SYSCALL_ipcSend: reply = syscall_ipcSend(psp); break;
-        case SYSCALL_ipcCall: reply = syscall_ipcCall(psp); break;
-        case SYSCALL_ipcRecv: reply = syscall_ipcRecv(psp); break;
-        case SYSCALL_noop:    reply = syscall_noop(psp);    break;
+        case SYSCALL_ipcSend: psp->r[0] = syscall_ipcSend(psp); break;
+        case SYSCALL_ipcCall: psp->r[0] = syscall_ipcCall(psp); break;
+        case SYSCALL_ipcRecv: psp->r[0] = syscall_ipcRecv(psp); break;
+
         default: { // wrap into an ipcCall to task #0
+            // msg can be on the stack, because task #0 always accepts 'em now
             Message sysMsg;
-            sysMsg.request = req;
+            sysMsg.req = req;
             sysMsg.args = psp->r;
-            (void) Task::index(0).replyTo(&sysMsg);
-            return; // skip filling in the reply, replyTo will do it later
+            (void) Task::index(0).replyTo(&sysMsg); // XXX explain void
         }
     }
-    psp->r[0] = reply; // save svc reply in the caller's saved r0
 }
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// System call routing table. All 256 entries can be adjusted dynamically.
+// Defines how incoming messages are handled, most are checked and forwarded.
+
+struct SysRoute {
+    uint8_t task, num, info, format;
+
+    void set (int t, int n, int i =0, int f =0) {
+        task = t; num = n; info = i; format = f;
+    }
+};
+
+SysRoute routes [256]; // can be indexed by any uint8_t value, i.e. SVC number
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Task zero, the special system task. It's the only one started by main().
@@ -484,7 +492,6 @@ void systemTask () {
 
     irqVec->sv_call = privilegedSetup;
     asm volatile ("svc #0"); // may be last chance to break out of thread mode
-
     irqVec->sv_call = SVC_Handler;
 
     irqVec->systick = []() {
@@ -494,121 +501,44 @@ void systemTask () {
         yield = false;
     };
 
-#define DEFINE_TASK(num, stacksize, body) \
-alignas(8) static uint8_t stack_##num [stacksize]; \
-Task::index(num).init(stack_##num + stacksize, []() { body });
+#include "test_tasks.h"
 
-    DEFINE_TASK(1, 256,
-        PinA<7> led3;
-        led3.mode(Pinmode::out);
-        while (true) {
-            led3 = 0; // inverted logic
-            msWait(140);
-            led3 = 1;
-            msWait(140);
-        }
-    )
-
-    DEFINE_TASK(2, 256,
-        msWait(1000);
-        printf("%d 2: start listening\n", ticks);
-        while (true) {
-            Message msg;
-            int src = ipcRecv(&msg);
-            printf("%d 2: received #%d from %d\n", ticks, msg.request, src);
-            if (src == 4) {
-                msWait(50);
-                msg.request = -msg.request;
-                printf("%d 2: about to reply #%d\n", ticks, msg.request);
-                int e = ipcSend(src, &msg);
-                if (e != 0)
-                    printf("%d 2: reply? %d\n", ticks, e);
-            }
-        }
-    )
-
-    DEFINE_TASK(3, 256,
-        Message msg;
-        msg.request = 99;
-        while (true) {
-            msWait(500);
-            printf("%d 3: sending #%d\n", ticks, ++msg.request);
-#if 1
-            int e = ipcSend(2, &msg);
-#else
-            DWT::start(); // bus faults unless in priviliged mode
-            int e = ipcSend(2, &msg);
-            DWT::stop();
-            printf("%d 3: send %d cycles\n", ticks, DWT::count());
-
-            DWT::start(); // bus faults unless in priviliged mode
-            noop();
-            DWT::stop();
-            printf("%d 3: noop %d cycles\n", ticks, DWT::count());
-#endif
-            if (e != 0)
-                printf("%d 3: send? %d\n", ticks, e);
-            msWait(1000);
-        }
-    )
-
-    DEFINE_TASK(4, 256,
-        Message msg;
-        msg.request = 999;
-        while (true) {
-            msWait(2000);
-            printf("%d 4: calling #%d\n", ticks, ++msg.request);
-            int e = ipcCall(2, &msg);
-            printf("%d 4: result #%d status %d\n", ticks, msg.request, e);
-            msWait(2000);
-        }
-    )
-
-    DEFINE_TASK(5, 256,
-        msWait(300);
-        for (int i = 0; i < 3; ++i) {
-            Task::dump();
-            msWait(3210);
-        }
-        printf("%d 5: about to exit\n", ticks);
-    )
-
-    DEFINE_TASK(6, 256,
-        PinA<6> led2;
-        led2.mode(Pinmode::out);
-        while (true) {
-            printf("%d\n", ticks);
-            led2 = 0; // inverted logic
-            msWait(50);
-            led2 = 1;
-            msWait(950);
-            int n = demo(11, 22, 33, 44);
-            if (n != 11 + 22 + 33 + 44)
-                printf("%d n? %d\n", ticks, n);
-        }
-    )
+    // these requests are handled by this system task
+    routes[SYSCALL_noop].set(0, 0); // same as all the default entries
+    routes[SYSCALL_demo].set(0, 1);
+    routes[SYSCALL_exit].set(0, 2);
 
     while (true) {
-        static Message msg;
-        int src = ipcRecv(&msg);
-        int req = msg.request;
-        uint32_t* args = msg.args;
-        printf("%d 0: received #%d args %08x from %d\n", ticks, req, args, src);
-        switch (msg.request) {
+        static Message sysMsg; // must be static, else it usage-faults XXX ?
+        int src = ipcRecv(&sysMsg);
 
-            case SYSCALL_demo: {
-                printf("<demo %d %d %d %d>\n",
-                        args[0], args[1], args[2], args[3]);
-                int result = args[0] + args[1] + args[2] + args[3];
-                int e = ipcSend(src, &msg);
-                printf("%d 0: replied to #%d with %d status %d\n",
-                        ticks, src, result, e);
-                args[0] = result; // replace resume's result with actual one
-                break;
+        int req = sysMsg.req;
+        uint32_t* args = sysMsg.args;
+        bool wantsReply = Task::index(src).blocking == &Task::current();
+        printf("%d 0: ipc %s req %d from %d\n",
+                ticks, wantsReply ? "CALL" : "SEND", req, src);
+
+        SysRoute& sr = routes[(uint8_t) req]; // index is never out of range
+        if (sr.task != 0)
+            ; // TODO needs to be forwarded
+        else
+            switch (sr.num) {
+                case 1: { // demo
+                    printf("<demo %d %d %d %d>\n",
+                            args[0], args[1], args[2], args[3]);
+                    int result = args[0] + args[1] + args[2] + args[3];
+                    /*int e =*/ ipcSend(src, &sysMsg);
+                    //printf("%d 0: replied to #%d with %d status %d\n",
+                    //        ticks, src, result, e);
+                    args[0] = result; // replace resume's result with actual one
+                    break;
+                }
+
+                case 2: // exit
+                    break; // TODO task is kept waiting forever, must clean up
+
+                default:
+                    printf("%d 0: sysroute (0,%d) ?\n", ticks, sr.num);
             }
-
-            case SYSCALL_exit:
-                break; // TODO task is now simply left waiting forever
-        }
     }
 }
