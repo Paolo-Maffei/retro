@@ -65,8 +65,8 @@ struct HardwareStackFrame {
 // FIXME asm below assumes nextTask is placed just after currTask in memory
 uint32_t **currTask, **nextTask; // ptrs for saved PSPs of current & next tasks
 
-// context switcher, no floating point support TODO add mpu region save/restore
-// this code does not deal with tasks, just with two pointers to saved PSPs
+// context switcher, includes adjusted MPU maps, no floating point support
+// this does not need to deal with tasks, just pointers to its first 2 fields
 void PendSV_Handler () {
     //DWT::start();
     asm volatile ("\
@@ -79,8 +79,11 @@ void PendSV_Handler () {
         // load next context \n\
         ldr    r4,[r1,#4]   // get next task ptr \n\
         str    r4,[r1]      // set currTask = nextTask \n\
-        ldr    r0,[r4]      // Load PSP value from next task \n\
-        // TODO load appropriate MPU regions \n\
+        ldr    r0,[r4]      // load PSP value from next task \n\
+        ldr    r1,[r4,#4]   // load pointer to MPU regions \n\
+        ldmia  r1,{r2-r5}   // load R2 to R5 for 2 MPU regions (4 regs) \n\
+        ldr    r1,=0xE000ED9C // load address of first MPU RBAR reg \n\
+        stm    r1,{r2-r5}   // store 2 new maps in MPU regs (4 regs) \n\
         ldmia  r0!,{r4-r11} // load R4 to R11 from task stack (8 regs) \n\
         msr    psp, r0      // set PSP to next task \n\
     ");
@@ -158,12 +161,13 @@ struct Message {
 // Tasks and task management.
 
 class Task {
-    uint32_t* pspSaved; // this MUST be the first field in each Task object
+    uint32_t* pspSaved; // this MUST be first in each Task object
+    uint32_t* mpuMaps;  // this MUST be second in each Task object
     Task* blocking;     // set while waiting, to the task where we're queued
     Task* pendingQueue; // tasks waiting for their call to be accepted
     Task* finishQueue;  // tasks waiting for their call to be completed
     Message* msgBuf;    // set while recv or reply wants a new message
-    uint32_t spare[2];  // pad the total task size to 32 bytes
+    uint32_t spare;     // pad the total task size to 32 bytes
 public:
     Task* next;         // used in waiting tasks, i.e. when on some linked list
 
@@ -174,7 +178,8 @@ public:
         psp->pc = (uint32_t) func;
         psp->psr = 0x01000000;
         pspSaved = (uint32_t*) psp - PSP_EXTRA;
-        // TODO also set up MPU regions
+        static const uint32_t dummyMaps [4] = {}; // two disabled regions
+        mpuMaps = (uint32_t*) dummyMaps;
     }
 
     static void start () {
