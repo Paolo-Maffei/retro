@@ -38,9 +38,9 @@ void kputs (char const* msg) {
 
 // give up, but not before trying to send a final message to the console port
 void panic (char const* msg) {
-    asm ("cpsid if"); // disable interrupts and faults
+    asm volatile ("cpsid if"); // disable interrupts and faults
     kputs("\n*** panic: "); kputs(msg); kputs(" ***\n");
-    while (1) {} // hang
+    while (true) {} // hang
 }
 
 // set up and enable the main fault handlers
@@ -160,7 +160,8 @@ bool listRemove (T*& list, T& item) {
 
 struct Message {
     int request;
-    int filler [15];
+    uint32_t* args;
+    int filler [14];
 };
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -183,10 +184,14 @@ public:
     static constexpr int MAX_TASKS = 25;
 
     void init (void* stackTop, void (*func)()) {
-        // use the C++11 compiler to verify a design choice
+        // use the C++11 compiler to verify some design choices
+        static_assert(sizeof (Message) == 64); // fixed and known message size
         static_assert((sizeof *this & (sizeof *this - 1)) == 0); // power of 2
 
+        extern int exit (int); // forward declaration TODO yuck
+
         HardwareStackFrame* psp = (HardwareStackFrame*) stackTop - 1;
+        psp->lr = (uint32_t) exit;
         psp->pc = (uint32_t) func;
         psp->psr = 0x01000000;
         pspSaved = (uint32_t*) psp - PSP_EXTRA;
@@ -337,13 +342,14 @@ enum {
     SYSCALL_ipcRecv,
     SYSCALL_noop,
     SYSCALL_demo,
+    SYSCALL_exit,
     SYSCALL_MAX
 };
 
 // helper to define system call stubs (up to 4 typed args, returning int)
 #define SYSCALL_STUB(name, args) \
     __attribute__((naked)) int name args \
-    { asm ("svc %0; bx lr" :: "i" (SYSCALL_ ## name)); }
+    { asm volatile ("svc %0; bx lr" :: "i" (SYSCALL_ ## name)); }
 
 // these are all the system call stubs
 SYSCALL_STUB(ipcSend, (int dst, Message* msg))
@@ -351,6 +357,7 @@ SYSCALL_STUB(ipcCall, (int dst, Message* msg))
 SYSCALL_STUB(ipcRecv, (Message* msg))
 SYSCALL_STUB(noop, ())
 SYSCALL_STUB(demo, (int a, int b, int c, int d))
+SYSCALL_STUB(exit, (int e))
 
 // TODO move everything up to the above enum to a C header for use in tasks
 
@@ -379,14 +386,8 @@ static int syscall_ipcRecv (HardwareStackFrame* sfp) {
 
 // returns immediately, only used for timing tests
 static int syscall_noop (HardwareStackFrame* sfp) {
-    return 0;
-}
-
-// test syscall to check that args + return values are properly transferred
-static int syscall_demo (HardwareStackFrame* sfp) {
     //printf("%d cycles\n", DWT::count());
-    printf("<demo %d %d %d %d>\n", sfp->r[0], sfp->r[1], sfp->r[2], sfp->r[3]);
-    return sfp->r[0] + sfp->r[1] + sfp->r[2] + sfp->r[3];
+    return 0;
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -398,7 +399,7 @@ static int syscall_demo (HardwareStackFrame* sfp) {
 
 void SVC_Handler () {
     HardwareStackFrame* psp;
-    asm ("mrs %0, psp" : "=r" (psp));
+    asm volatile ("mrs %0, psp" : "=r" (psp));
     uint8_t req = ((uint8_t*) (psp->pc))[-2];
 #if 0
     printf("< svc.%d psp %08x r0.%d lr %08x pc %08x psr %08x >\n",
@@ -424,16 +425,21 @@ void SVC_Handler () {
     // there's no need to enforce these permissions right now, that can be
     // done in the ipc calls and in task #0, which handles all other calls
 
-    int result = -1;
+    int reply = -1;
     switch (req) {
-        case SYSCALL_ipcSend: result = syscall_ipcSend(psp); break;
-        case SYSCALL_ipcCall: result = syscall_ipcCall(psp); break;
-        case SYSCALL_ipcRecv: result = syscall_ipcRecv(psp); break;
-        case SYSCALL_noop:    result = syscall_noop(psp);    break;
-        case SYSCALL_demo:    result = syscall_demo(psp);    break;
-        default: ; // TODO wrap into an ipcSend to task #0
+        case SYSCALL_ipcSend: reply = syscall_ipcSend(psp); break;
+        case SYSCALL_ipcCall: reply = syscall_ipcCall(psp); break;
+        case SYSCALL_ipcRecv: reply = syscall_ipcRecv(psp); break;
+        case SYSCALL_noop:    reply = syscall_noop(psp);    break;
+        default: { // wrap into an ipcCall to task #0
+            Message sysMsg;
+            sysMsg.request = req;
+            sysMsg.args = psp->r;
+            (void) Task::index(0).replyTo(&sysMsg);
+            return; // skip filling in the reply, replyTo will do it later
+        }
     }
-    psp->r[0] = result; // save svc result in the caller's saved r0
+    psp->r[0] = reply; // save svc reply in the caller's saved r0
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -560,22 +566,44 @@ Task::index(num).init(stack_##num + stacksize, []() { body });
 
     DEFINE_TASK(5, 256,
         msWait(300);
-        while (true) {
+        for (int i = 0; i < 3; ++i) {
             Task::dump();
-            msWait(4321);
+            msWait(3210);
+        }
+        printf("%d 5: about to exit\n", ticks);
+    )
+
+    DEFINE_TASK(6, 256,
+        PinA<6> led2;
+        led2.mode(Pinmode::out);
+        while (true) {
+            printf("%d\n", ticks);
+            led2 = 0; // inverted logic
+            msWait(50);
+            led2 = 1;
+            msWait(950);
+            int n = demo(11, 22, 33, 44);
+            if (n != 11 + 22 + 33 + 44)
+                printf("%d n? %d\n", ticks, n);
         }
     )
 
-    PinA<6> led2;
-    led2.mode(Pinmode::out);
     while (true) {
-        printf("%d\n", ticks);
-        led2 = 0; // inverted logic
-        msWait(50);
-        led2 = 1;
-        msWait(950);
-        int n = demo(1, 2, 3, 4);
-        if (n != 1 + 2 + 3 + 4)
-            printf("%d n? %d\n", ticks, n);
+        Message msg;
+        int src = ipcRecv(&msg);
+        int req = msg.request;
+        uint32_t* args = msg.args;
+        printf("%d 0: received #%d args %08x from %d\n", ticks, req, args, src);
+        switch (msg.request) {
+
+            case SYSCALL_demo:
+                printf("<demo %d %d %d %d>\n",
+                        args[0], args[1], args[2], args[3]);
+                msg.request = args[0] + args[1] + args[2] + args[3];
+                //ipcSend(src, &msg);
+                break;
+
+            case SYSCALL_exit: break; // TODO
+        }
     }
 }
