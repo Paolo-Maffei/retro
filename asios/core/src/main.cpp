@@ -396,6 +396,10 @@ int (*const syscallVec[])(HardwareStackFrame*) = {
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // SVC system call interface, required to switch from thread to handler state.
+//
+// During a system call, only *part* of the context is saved (r0..psr), the
+// remaining context (i.e. R4-R11 and optional FP regs) need to be preserved.
+// This is ok, as context switches only happen in PendSV, i.e. outside SVCs.
 
 void SVC_Handler () {
     HardwareStackFrame* psp;
@@ -427,24 +431,6 @@ void SVC_Handler () {
 
     psp->r[0] = req < SYSCALL_MAX ? syscallVec[req](psp) : -1;
 }
-
-/* During a system call, only *part* of the context is saved (r0..psr), the
-   remaining context (i.e. r4..r11 and optional fp regs) need to be preserved.
-   This is ok, as context switches only happen in PendSV, i.e. outside SVCs. */
-
-#if 0
-__attribute__((naked)) // avoid warning about missing return value
-int syscall (...) {
-    asm volatile ("svc #0; bx lr");
-}
-
-// system calls using a compile-time configurable "SVC #N" (only works in C++)
-template< int N >
-__attribute__((naked)) // avoid warning about missing return value
-int syscall (...) {
-    asm volatile ("svc %0; bx lr" :: "i" (N));
-}
-#endif
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Task zero, the special system task. It's the only one started by main().
