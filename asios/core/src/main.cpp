@@ -72,7 +72,6 @@ void PendSV_Handler () {
         // save current context \n\
         mrs    r0, psp      // get current process stack pointer value \n\
         stmdb  r0!,{r4-r11} // save R4 to R11 in task stack (8 regs) \n\
-        // TODO save MPU regions
         ldr    r1,=currTask \n\
         ldr    r2,[r1]      // get current task ptr \n\
         str    r0,[r2]      // save PSP value into current task \n\
@@ -81,7 +80,7 @@ void PendSV_Handler () {
         ldr    r4,[r4]      // get next task ptr \n\
         str    r4,[r1]      // set currTask = nextTask \n\
         ldr    r0,[r4]      // Load PSP value from next task \n\
-        // TODO restore MPU regions
+        // TODO load appropriate MPU regions
         ldmia  r0!,{r4-r11} // load R4 to R11 from task stack (8 regs) \n\
         msr    psp, r0      // set PSP to next task \n\
     ");
