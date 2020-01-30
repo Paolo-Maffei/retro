@@ -589,21 +589,26 @@ Task::index(num).init(stack_##num + stacksize, []() { body });
     )
 
     while (true) {
-        Message msg;
+        static Message msg;
         int src = ipcRecv(&msg);
         int req = msg.request;
         uint32_t* args = msg.args;
         printf("%d 0: received #%d args %08x from %d\n", ticks, req, args, src);
         switch (msg.request) {
 
-            case SYSCALL_demo:
+            case SYSCALL_demo: {
                 printf("<demo %d %d %d %d>\n",
                         args[0], args[1], args[2], args[3]);
-                msg.request = args[0] + args[1] + args[2] + args[3];
-                //ipcSend(src, &msg);
+                int result = args[0] + args[1] + args[2] + args[3];
+                int e = ipcSend(src, &msg);
+                printf("%d 0: replied to #%d with %d status %d\n",
+                        ticks, src, result, e);
+                args[0] = result; // replace resume's result with actual one
                 break;
+            }
 
-            case SYSCALL_exit: break; // TODO
+            case SYSCALL_exit:
+                break; // TODO task is now simply left waiting forever
         }
     }
 }
