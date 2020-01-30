@@ -105,8 +105,11 @@ void startTasks (void* firstTask) {
     MMIO8(0xE000ED22) = 0xFF; // SHPR3->PRI_14 = 0xFF
     VTableRam().pend_sv = PendSV_Handler;
 
-    //asm volatile ("msr control, %0; isb" :: "r" (2)); // keep privileged mode
+#if 0
     asm volatile ("msr control, %0; isb" :: "r" (3)); // to unprivileged mode
+#else
+    asm volatile ("msr control, %0; isb" :: "r" (2)); // keep privileged mode
+#endif
 
     // launch main task, running in unprivileged thread mode from now on
     ((void (*)()) psp->pc)();
@@ -170,8 +173,11 @@ class Task {
     Task* pendingQueue; // tasks waiting for their call to be accepted
     Task* finishQueue;  // tasks waiting for their call to be completed
     Message* msgBuf;    // set while recv or reply can take a new message
-    uint8_t spare[4];   // pad the total task size to 32 bytes
+    uint8_t spare[3];   // pad the total task size to 32 bytes
 public:
+    enum { Early, App, Server, Driver }; // type of task
+    uint8_t type :2;    // set once the first SVC call is made
+
     Task* next;         // used in waiting tasks, i.e. when on some linked list
 
     static constexpr int MAX_TASKS = 25;
@@ -288,8 +294,8 @@ void Task::dump () {
     for (int i = 0; i < MAX_TASKS; ++i) {
         Task& t = Task::index(i);
         if (t.pspSaved) {
-            printf("[%03x] %2d: %c sp %08x",
-                    (uint32_t) &t & 0xFFF, i, "USWRA"[t.state()], t.pspSaved);
+            printf("[%03x] %2d: %c%c sp %08x", (uint32_t) &t & 0xFFF,
+                    i, " *<~"[t.type], "USWRA"[t.state()], t.pspSaved);
             printf(" blkg %2d pend %08x fini %08x mbuf %08x\n",
                     t.blocking == 0 ? -1 : t.blocking->index(),
                     t.pendingQueue, t.finishQueue, t.msgBuf);
@@ -301,10 +307,10 @@ void Task::dump () {
 // System call handlers and dispatch vector. These always run in SVC context.
 
 enum {
-    SYSCALL_noop,
     SYSCALL_ipcSend,
     SYSCALL_ipcCall,
     SYSCALL_ipcRecv,
+    SYSCALL_noop,
     SYSCALL_demo,
     SYSCALL_MAX
 };
@@ -315,18 +321,13 @@ enum {
     { asm ("svc %0; bx lr" :: "i" (SYSCALL_ ## name)); }
 
 // these are all the system call stubs
-SYSCALL_STUB(noop, ())
 SYSCALL_STUB(ipcSend, (int dst, Message* msg))
 SYSCALL_STUB(ipcCall, (int dst, Message* msg))
 SYSCALL_STUB(ipcRecv, (Message* msg))
+SYSCALL_STUB(noop, ())
 SYSCALL_STUB(demo, (int a, int b, int c, int d))
 
 // TODO move everything up to the above enum to a C header for use in tasks
-
-// returns immediately, only used for timing tests
-int syscall_noop (HardwareStackFrame* fp) {
-    return 0;
-}
 
 // non-blocking message send, behaves as atomic test-and-set
 int syscall_ipcSend (HardwareStackFrame* fp) {
@@ -351,6 +352,11 @@ int syscall_ipcRecv (HardwareStackFrame* fp) {
     return Task::current().listen(msg);
 }
 
+// returns immediately, only used for timing tests
+int syscall_noop (HardwareStackFrame* fp) {
+    return 0;
+}
+
 // test syscall to check that args + return values are properly transferred
 int syscall_demo (HardwareStackFrame* fp) {
     //printf("%d cycles\n", DWT::count());
@@ -360,10 +366,10 @@ int syscall_demo (HardwareStackFrame* fp) {
 
 // these stubs must match the exact order and number of SYSCALL_* enums
 int (*const syscallVec[])(HardwareStackFrame*) = {
-    syscall_noop,
     syscall_ipcSend,
     syscall_ipcCall,
     syscall_ipcRecv,
+    syscall_noop,
     syscall_demo,
 };
 
@@ -371,8 +377,9 @@ int (*const syscallVec[])(HardwareStackFrame*) = {
 // SVC system call interface, required to switch from thread to handler state.
 
 void setupSystemCalls () {
-    // use the compiler to verify that the syscall enum and vector size match
+    // use the C++11 compiler to verify a few design invariants
     static_assert(SYSCALL_MAX == sizeof syscallVec / sizeof *syscallVec);
+    static_assert((sizeof (Task) & (sizeof (Task) - 1)) == 0); // power of 2
 
     // allow SVC requests from thread state, but not from exception handlers
     // (a SVC which can't be serviced right away will generate a hard fault)
@@ -387,11 +394,25 @@ void setupSystemCalls () {
         printf("< svc.%d psp %08x r0.%d lr %08x pc %08x psr %08x >\n",
                 req, psp, psp->r[0], psp->lr, psp->pc, psp->psr);
 #endif
-        // make *currTask "resemble" a stack with full context
-        // this is fiction, since r4..r11 (and fp regs) have *not* been saved
-        // note that *currTask is not relevant, the real psp is what counts
+        // first of all, make *currTask "resemble" a stack with full context
+        // this is fiction, since R4-R11 (and FP regs) have *not* been saved
+        // note that *currTask is not authoritative, h/w uses the real psp
         // now all valid task entries have similar stack ptrs for kernel use
         *currTask = (uint32_t*) psp - PSP_EXTRA;
+
+        // fully-automated task categorisation: the first SVC call made by a
+        // task will configure its type, and therefore its system permissions
+        Task& t = Task::current();
+        if (t.type == Task::Early)
+            switch (req) {
+                case SYSCALL_ipcSend: break; // no change
+                case SYSCALL_ipcCall: t.type = Task::Driver; break;
+                case SYSCALL_ipcRecv: t.type = Task::Server; break;
+                default: t.type = Task::App; break;
+            }
+
+        // there's no need to enforce these permissions right now, that can be
+        // done in the ipc calls and in task #0, which handles all system calls
 
         psp->r[0] = req < SYSCALL_MAX ? syscallVec[req](psp) : -1;
     };
@@ -500,23 +521,26 @@ int main () {
     )
 
     DEFINE_TASK(3, 256,
-#if 0
-        DWT::start(); // bus faults unless in priviliged mode
-        noop();
-        DWT::stop();
-        printf("%d 3: noop %d cycles\n", ticks, DWT::count());
-#endif
         Message msg;
         msg.request = 99;
         while (true) {
             wait_ms(1500);
             printf("%d 3: sending #%d\n", ticks, ++msg.request);
-            //DWT::start(); // bus faults unless in priviliged mode
+#if 0
             int e = ipcSend(2, &msg);
-            //DWT::stop();
+#else
+            DWT::start(); // bus faults unless in priviliged mode
+            int e = ipcSend(2, &msg);
+            DWT::stop();
+            printf("%d 3: send %d cycles\n", ticks, DWT::count());
+
+            DWT::start(); // bus faults unless in priviliged mode
+            noop();
+            DWT::stop();
+            printf("%d 3: noop %d cycles\n", ticks, DWT::count());
+#endif
             if (e != 0)
                 printf("%d 3: send? %d\n", ticks, e);
-            //printf("%d 3: %d cycles\n", ticks, DWT::count());
         }
     )
 
