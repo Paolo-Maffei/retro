@@ -363,26 +363,26 @@ SYSCALL_STUB(exit, (int e))
 // TODO move everything up to the above enum to a C header for use in tasks
 
 // non-blocking message send, behaves as atomic test-and-set
-static int syscall_ipcSend (HardwareStackFrame* sfp) {
+static void do_ipcSend (HardwareStackFrame* sfp) {
     int dst = sfp->r[0];
     Message* msg = (Message*) sfp->r[1];
     // ... validate dst and msg
-    return Task::index(dst).deliver(msg);
+    sfp->r[0] = Task::index(dst).deliver(msg);
 }
 
 // blocking send + receive, used for request/reply sequences
-static int syscall_ipcCall (HardwareStackFrame* sfp) {
+static void do_ipcCall (HardwareStackFrame* sfp) {
     int dst = sfp->r[0];
     Message* msg = (Message*) sfp->r[1];
     // ... validate dst and msg
-    return Task::index(dst).replyTo(msg);
+    sfp->r[0] = Task::index(dst).replyTo(msg);
 }
 
 // blocking receive, used by drivers and servers
-static int syscall_ipcRecv (HardwareStackFrame* sfp) {
+static void do_ipcRecv (HardwareStackFrame* sfp) {
     Message* msg = (Message*) sfp->r[0];
     // ... validate msg
-    return Task::current().listen(msg);
+    sfp->r[0] = Task::current().listen(msg);
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -422,9 +422,9 @@ void SVC_Handler () {
     // done in the ipc calls and in task #0, which handles all other calls
 
     switch (req) {
-        case SYSCALL_ipcSend: psp->r[0] = syscall_ipcSend(psp); break;
-        case SYSCALL_ipcCall: psp->r[0] = syscall_ipcCall(psp); break;
-        case SYSCALL_ipcRecv: psp->r[0] = syscall_ipcRecv(psp); break;
+        case SYSCALL_ipcSend: do_ipcSend(psp); break;
+        case SYSCALL_ipcCall: do_ipcCall(psp); break;
+        case SYSCALL_ipcRecv: do_ipcRecv(psp); break;
 
         default: { // wrap into an ipcCall to task #0
             // msg can be on the stack, because task #0 always accepts 'em now
