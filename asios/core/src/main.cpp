@@ -500,7 +500,7 @@ void systemTask () {
     irqVec->systick = []() {
         ++ticks;
         if (yield || ticks % 20 == 0) // switch tasks every 20 ms
-            if (&Task::current() != Task::vec) // in system task?
+            if (&Task::current() != Task::vec) // unless in system task
                 changeTask(Task::nextRunnable());
         yield = false;
     };

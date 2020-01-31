@@ -4,17 +4,6 @@
 alignas(8) static uint8_t stack_##num [stacksize]; \
 Task::vec[num].init(stack_##num + stacksize, []() { body });
 
-DEFINE_TASK(1, 256,
-    PinA<7> led3;
-    led3.mode(Pinmode::out);
-    while (true) {
-        led3 = 0; // inverted logic
-        msWait(140);
-        led3 = 1;
-        msWait(140);
-    }
-)
-
 DEFINE_TASK(2, 256,
     msWait(1000);
     printf("%d 2: start listening\n", ticks);
@@ -91,5 +80,16 @@ DEFINE_TASK(6, 256,
         int n = demo(11, 22, 33, 44);
         if (n != 11 + 22 + 33 + 44)
             printf("%d n? %d\n", ticks, n);
+    }
+)
+
+DEFINE_TASK(7, 256,
+    PinA<7> led3;
+    led3.mode(Pinmode::out);
+    while (true) {
+        led3 = 0; // inverted logic
+        msWait(140);
+        led3 = 1;
+        msWait(140);
     }
 )
