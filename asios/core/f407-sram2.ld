@@ -4,17 +4,17 @@
 ENTRY(Reset_Handler)
 
 /* Generate a link error if stack doesn't fit into RAM */
-_Min_Stack_Size = 0x800;     /* required amount of stack */
+_Min_Stack_Size = 0x400;     /* required amount of stack */
 
 /* Specify the memory areas */
 MEMORY
 {
-    SRAM2 (xrw)     : ORIGIN = 0x2001C000, LENGTH = 16K
+    RAM (xrw)       : ORIGIN = 0x2001E000, LENGTH = 8K
     FLASH (rx)      : ORIGIN = 0x08000000, LENGTH = 16K
 }
 
 /* Highest address of the user mode stack */ 
-_estack = ORIGIN(SRAM2) + LENGTH(SRAM2);
+_estack = ORIGIN(RAM) + LENGTH(RAM);
 
 /* Define output sections */
 SECTIONS
@@ -31,10 +31,9 @@ SECTIONS
   .text :
   {
     . = ALIGN(4);
+    _stext = .;        /* create a global symbol at start of code */
     *(.text)           /* .text sections (code) */
     *(.text*)          /* .text* sections (code) */
-    *(.glue_7)         /* glue arm to thumb code */
-    *(.glue_7t)        /* glue thumb to arm code */
     *(.eh_frame)
 
     KEEP (*(.init))
@@ -94,7 +93,7 @@ SECTIONS
 
     . = ALIGN(4);
     _edata = .;        /* define a global symbol at data end */
-  } >SRAM2 AT> FLASH
+  } >RAM AT> FLASH
   
   /* Uninitialized data section */
   . = ALIGN(4);
@@ -110,7 +109,7 @@ SECTIONS
     . = ALIGN(4);
     _ebss = .;         /* define a global symbol at bss end */
     __bss_end__ = _ebss;
-  } >SRAM2
+  } >RAM
 
   /* User_heap_stack section, used to check that there is enough RAM left */
   ._user_heap_stack :
@@ -120,7 +119,7 @@ SECTIONS
     PROVIDE ( _end = . );
     . = . + _Min_Stack_Size;
     . = ALIGN(4);
-  } >SRAM2
+  } >RAM
 
   /* Remove information from the standard libraries */
   /DISCARD/ :

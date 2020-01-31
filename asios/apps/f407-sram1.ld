@@ -2,15 +2,16 @@
 
 ENTRY(main)
 
-/* Highest address of the user mode stack */ 
-_estack = 0x20010000;    /* end of SRAM */
 /* Generate a link error if heap and stack don't fit into RAM */
 _Min_Stack_Size = 0x100;     /* required amount of stack */
 
 MEMORY
 {
-    SRAM (xrw)     : ORIGIN = 0x20000000, LENGTH = 64K
+    RAM (xrw)     : ORIGIN = 0x20000000, LENGTH = 112K
 }
+
+/* Highest address of the user mode stack */ 
+_estack = ORIGIN(RAM) + LENGTH(RAM);
 
 SECTIONS
 {
@@ -19,7 +20,7 @@ SECTIONS
     . = ALIGN(4);
     KEEP(*(.exe_header)) /* header */
     . = ALIGN(4);
-  } >SRAM
+  } >RAM
 
   .text :
   {
@@ -28,10 +29,11 @@ SECTIONS
     *(.text*)          /* .text* sections (code) */
 
     KEEP (*(.init))
+    KEEP (*(.fini))
 
     . = ALIGN(4);
     _etext = .;        /* define a global symbols at end of code */
-  } >SRAM
+  } >RAM
 
   .rodata :
   {
@@ -39,33 +41,35 @@ SECTIONS
     *(.rodata)         /* .rodata sections (constants, strings, etc.) */
     *(.rodata*)        /* .rodata* sections (constants, strings, etc.) */
     . = ALIGN(4);
-  } >SRAM
+  } >RAM
 
-  .ARM.extab   : { *(.ARM.extab* .gnu.linkonce.armextab.*) } >SRAM
+  .ARM.extab   : { *(.ARM.extab* .gnu.linkonce.armextab.*) } >RAM
   .ARM : {
     __exidx_start = .;
     *(.ARM.exidx*)
     __exidx_end = .;
-  } >SRAM
+  } >RAM
 
   .preinit_array     :
   {
     PROVIDE_HIDDEN (__preinit_array_start = .);
     KEEP (*(.preinit_array*))
     PROVIDE_HIDDEN (__preinit_array_end = .);
-  } >SRAM
+  } >RAM
   .init_array :
   {
     PROVIDE_HIDDEN (__init_array_start = .);
     KEEP (*(SORT(.init_array.*)))
     KEEP (*(.init_array*))
     PROVIDE_HIDDEN (__init_array_end = .);
-  } >SRAM
+  } >RAM
   .fini_array :
   {
     PROVIDE_HIDDEN (__fini_array_start = .);
+    KEEP (*(SORT(.fini_array.*)))
+    KEEP (*(.fini_array*))
     PROVIDE_HIDDEN (__fini_array_end = .);
-  } >SRAM
+  } >RAM
 
   /* used by the startup to initialize data */
   _sidata = LOADADDR(.data);
@@ -79,7 +83,7 @@ SECTIONS
 
     . = ALIGN(4);
     _edata = .;        /* define a global symbol at data end */
-  } >SRAM
+  } >RAM
   
   . = ALIGN(4);
   .bss :
@@ -93,7 +97,7 @@ SECTIONS
     . = ALIGN(4);
     _ebss = .;         /* define a global symbol at bss end */
     __bss_end__ = _ebss;
-  } >SRAM
+  } >RAM
 
   ._user_heap_stack :
   {
@@ -102,7 +106,7 @@ SECTIONS
     PROVIDE ( _end = . );
     . = . + _Min_Stack_Size;
     . = ALIGN(4);
-  } >SRAM
+  } >RAM
 
   /* Remove information from the standard libraries */
   /DISCARD/ :
