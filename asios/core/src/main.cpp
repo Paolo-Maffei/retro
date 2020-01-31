@@ -183,6 +183,7 @@ public:
     uint8_t spare[3];   // pad the total task size to 32 bytes
 
     static constexpr int MAX_TASKS = 25;
+    static Task vec [MAX_TASKS];
 
     void init (void* stackTop, void (*func)()) {
         // use the C++11 compiler to verify some design choices
@@ -201,17 +202,16 @@ public:
     }
 
     static void run () {
-        startTasks(taskVec); // never returns
+        startTasks(vec); // never returns
     }
 
-    static Task& index (int num) { return taskVec[num]; }
     static Task& current () { return *(Task*) currTask; }
 
     static Task* nextRunnable () {
         Task* tp = &current();
         do
-            if (++tp - taskVec >= MAX_TASKS)
-                tp = taskVec;
+            if (++tp - vec >= MAX_TASKS)
+                tp = vec;
         while (tp->state() < Runnable);
         return tp;
     }
@@ -259,7 +259,7 @@ public:
     static void dump ();
 
 private:
-    uint32_t index () const { return this - taskVec; }
+    uint32_t index () const { return this - vec; }
 
     enum State { Unused, Suspended, Waiting, Runnable, Active };
 
@@ -292,16 +292,14 @@ private:
         context().r[0] = result; // save result inside calling context
         blocking = 0; // then allow it to run again
     }
-
-    static Task taskVec [];
 };
 
-Task Task::taskVec [MAX_TASKS];
+Task Task::vec [];
 
 // a crude task dump for basic debugging, using console & printf
 void Task::dump () {
     for (int i = 0; i < MAX_TASKS; ++i) {
-        Task& t = Task::index(i);
+        Task& t = Task::vec[i];
         if (t.pspSaved) {
             printf("[%03x] %2d: %c%c sp %08x", (uint32_t) &t & 0xFFF,
                     i, " *<~"[t.type], "USWRA"[t.state()], t.pspSaved);
@@ -329,7 +327,7 @@ int main () {
 
     // set up the stack and initialize the very first task
     alignas(8) static uint8_t stack_0 [256];
-    Task::index(0).init(stack_0 + sizeof stack_0, systemTask);
+    Task::vec[0].init(stack_0 + sizeof stack_0, systemTask);
 
     Task::run(); // the big leap into unprivileged thread mode, never returns
 }
@@ -367,7 +365,7 @@ static void do_ipcSend (HardwareStackFrame* sfp) {
     int dst = sfp->r[0];
     Message* msg = (Message*) sfp->r[1];
     // ... validate dst and msg
-    sfp->r[0] = Task::index(dst).deliver(msg);
+    sfp->r[0] = Task::vec[dst].deliver(msg);
 }
 
 // blocking send + receive, used for request/reply sequences
@@ -375,7 +373,7 @@ static void do_ipcCall (HardwareStackFrame* sfp) {
     int dst = sfp->r[0];
     Message* msg = (Message*) sfp->r[1];
     // ... validate dst and msg
-    sfp->r[0] = Task::index(dst).replyTo(msg);
+    sfp->r[0] = Task::vec[dst].replyTo(msg);
 }
 
 // blocking receive, used by drivers and servers
@@ -431,7 +429,7 @@ void SVC_Handler () {
             Message sysMsg;
             sysMsg.req = req;
             sysMsg.args = psp->r;
-            (void) Task::index(0).replyTo(&sysMsg); // XXX explain void
+            (void) Task::vec[0].replyTo(&sysMsg); // XXX explain void
         }
     }
 }
@@ -474,30 +472,36 @@ void msWait (uint32_t ms) {
 }
 #endif
 
-void privilegedSetup () {
-    // allow SVC requests from thread state, but not from exception handlers
-    // (an SVC which can't be serviced right away will generate a hard fault)
-    // kernel code can now be interrupted by most handlers other than PendSV
-    MMIO8(0xE000ED1F) = 0xFF; // SHPR2->PRI_11 = 0xFF
-
-    // TODO set up all the MPU regions and enable the MPU's memory protection
+// call the given function while briefly switched into privileged handler mode
+// note that for this to be robust, the system task must never be preempted
+void runPrivileged (void (*fun)()) {
+    irqVec->sv_call = fun;
+    asm volatile ("svc #0");
+    irqVec->sv_call = SVC_Handler;
 }
 
 void systemTask () {
     // This is task #0, running in thread mode. Since the MPU has not yet been
     // enabled and we have full R/W access to the interrupt vector in RAM, we
     // can still get to privileged mode by installing an exception handler and
-    // then triggering it (i.e. through an SVC call). This is used here to fix
-    // up a few details which can't be done in unprivileged mode.
+    // then triggering it (i.e. through a replaced SVC call). This is used here
+    // to fix up a few details which can't be done in unprivileged mode.
 
-    irqVec->sv_call = privilegedSetup;
-    asm volatile ("svc #0"); // may be last chance to break out of thread mode
-    irqVec->sv_call = SVC_Handler;
+    runPrivileged([] {
+        // lower the priority level of SVCs: this allows handling SVC requests
+        // from thread state, but not from exception handlers (an SVC call which
+        // can't be serviced right away will generate a hard fault), so now
+        // kernel code can be interrupted by most handlers other than PendSV
+        MMIO8(0xE000ED1F) = 0xFF; // SHPR2->PRI_11 = 0xFF
+
+        // TODO set up all MPU regions and enable the MPU's memory protection
+    });
 
     irqVec->systick = []() {
         ++ticks;
         if (yield || ticks % 20 == 0) // switch tasks every 20 ms
-            changeTask(Task::nextRunnable());
+            if (&Task::current() != Task::vec) // in system task?
+                changeTask(Task::nextRunnable());
         yield = false;
     };
 
@@ -509,12 +513,12 @@ void systemTask () {
     routes[SYSCALL_exit].set(0, 2);
 
     while (true) {
-        static Message sysMsg; // must be static, else it usage-faults XXX ?
+        static Message sysMsg; // must be static, else it usage-faults TODO ?
         int src = ipcRecv(&sysMsg);
 
         int req = sysMsg.req;
         uint32_t* args = sysMsg.args;
-        bool wantsReply = Task::index(src).blocking == &Task::current();
+        bool wantsReply = Task::vec[src].blocking == &Task::current();
         printf("%d 0: ipc %s req %d from %d\n",
                 ticks, wantsReply ? "CALL" : "SEND", req, src);
 

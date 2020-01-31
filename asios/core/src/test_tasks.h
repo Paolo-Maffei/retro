@@ -2,7 +2,7 @@
 
 #define DEFINE_TASK(num, stacksize, body) \
 alignas(8) static uint8_t stack_##num [stacksize]; \
-Task::index(num).init(stack_##num + stacksize, []() { body });
+Task::vec[num].init(stack_##num + stacksize, []() { body });
 
 DEFINE_TASK(1, 256,
     PinA<7> led3;
