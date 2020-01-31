@@ -35,10 +35,10 @@ into individual IPC messages, and sent to task #0. Task #0 is never preempted,
 therefore it's either doing some real work, or waiting for new requests. If
 task #0 were to ever fault or hang, all bets are off.
 
-Task #0 also receives all the non-IPC system calls. It can either process and
-respond to them, or route the requests to specific other tasks.  Task #0 has a
-"routing table" to determine how each request is treated, my plan is to allow
-adjusting this table dynamically, for replacing server tasks, etc.
+Task #0 can either process and respond to an IPC message, or forward it to
+another task.  A "routing table" determines how each request is treated. One
+idea would be to allow adjusting this table, so that servers and drivers can be
+replaced at run time.
 
 The kernel only handles message passing and context switching. System calls,
 IRQ handlers, I/O devices, and memory management are not its responsability.
