@@ -446,7 +446,7 @@ struct SysRoute {
     }
 };
 
-SysRoute routes [256]; // can be indexed by any uint8_t value, i.e. SVC number
+SysRoute routes [256]; // indexed by the SVC request code, i.e. 0..255
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Task zero, the special system task. It's the only one started by main().
@@ -516,33 +516,48 @@ void systemTask () {
         static Message sysMsg; // must be static, else it usage-faults TODO ?
         int src = ipcRecv(&sysMsg);
 
+        // examine incoming request, it's either an ipcSend or an ipcCall
         int req = sysMsg.req;
         uint32_t* args = sysMsg.args;
-        bool wantsReply = Task::vec[src].blocking == &Task::current();
+        bool wantsReply = Task::vec[src].blocking == Task::vec;
+        int reply = -1; // the default answer is failure
+
         printf("%d 0: ipc %s req %d from %d\n",
                 ticks, wantsReply ? "CALL" : "SEND", req, src);
 
+        // decide what to do with this request
         SysRoute& sr = routes[(uint8_t) req]; // index is never out of range
-        if (sr.task != 0)
-            ; // TODO needs to be forwarded
-        else
-            switch (sr.num) {
-                case 1: { // demo
-                    printf("<demo %d %d %d %d>\n",
-                            args[0], args[1], args[2], args[3]);
-                    int result = args[0] + args[1] + args[2] + args[3];
-                    /*int e =*/ ipcSend(src, &sysMsg);
-                    //printf("%d 0: replied to #%d with %d status %d\n",
-                    //        ticks, src, result, e);
-                    args[0] = result; // replace resume's result with actual one
-                    break;
-                }
+        if (sr.task != 0) {
+            // TODO needs to be forwarded
+            continue;
+        }
 
-                case 2: // exit
-                    break; // TODO task is kept waiting forever, must clean up
+        // this request needs to be handled here
+        switch (sr.num) {
+            case 0: // noop
+                break;
 
-                default:
-                    printf("%d 0: sysroute (0,%d) ?\n", ticks, sr.num);
+            case 1: { // demo
+                printf("<demo %d %d %d %d>\n",
+                        args[0], args[1], args[2], args[3]);
+                reply = args[0] + args[1] + args[2] + args[3];
+                break;
             }
+
+            case 2: // exit
+                wantsReply = false; // TODO will wait forever, must clean up
+                break;
+
+            default:
+                printf("%d 0: sysroute (0,%d) ?\n", ticks, sr.num);
+        }
+
+        // unblock the originating task if it's waiting
+        if (wantsReply) {
+            /*int e =*/ ipcSend(src, &sysMsg);
+            //printf("%d 0: replied to #%d with %d status %d\n",
+            //        ticks, src, result, e);
+            args[0] = reply; // replace resume's result with actual one
+        }
     }
 }
