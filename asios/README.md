@@ -17,7 +17,7 @@ Given enough effort, this O/S might well be turned into a POSIX-compliant
 operating system, with all the Unix'y features that come with it. Then again,
 without virtual memory (i.e. no MMU), it'd probably be more like ucLinux.
 
-Bat that's not the point of all this. The reason for creating this little
+But that's not the point of all this. The reason for creating this little
 creature, is to have a very clean and robust platform to develop embedded
 software in a more *modular* fashion. Instead of linking a growing application
 with a small piece of code I'm currently working on (say an LCD driver), I'd
