@@ -83,6 +83,7 @@ DEFINE_TASK(6, 256,
     }
 )
 
+#if 0
 DEFINE_TASK(7, 256,
     PinA<7> led3;
     led3.mode(Pinmode::out);
@@ -93,3 +94,4 @@ DEFINE_TASK(7, 256,
         msWait(140);
     }
 )
+#endif

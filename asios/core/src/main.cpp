@@ -487,6 +487,13 @@ void systemTask () {
     // then triggering it (i.e. through a replaced SVC call). This is used here
     // to fix up a few details which can't be done in unprivileged mode.
 
+    extern char _stext[], _sidata[], _sdata[],
+                _edata[], _sbss[], _ebss[], _estack[];
+    uint32_t dataSz = _edata - _sdata, bssSz = _ebss - _sbss;
+    uint32_t textSz = (_sidata - _stext) + dataSz; // incl data init
+    printf("st: text %08x %db data %08x %db bss %08x %db brk..msp %db\n",
+            _stext, textSz, _sdata, dataSz, _sbss, bssSz, _estack - _ebss);
+
     runPrivileged([] {
         // lower the priority level of SVCs: this allows handling SVC requests
         // from thread state, but not from exception handlers (an SVC call which
@@ -506,6 +513,10 @@ void systemTask () {
     };
 
 #include "test_tasks.h"
+
+    // set up task 1, using the stack and entry point found in flash memory
+    Task::vec[1].init((void*) MMIO32(0x08004000),
+                      (void (*)()) MMIO32(0x08004004));
 
     // these requests are handled by this system task
     routes[SYSCALL_noop].set(0, 0); // same as all the default entries
