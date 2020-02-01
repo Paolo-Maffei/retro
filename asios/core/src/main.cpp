@@ -349,6 +349,7 @@ enum {
     SYSCALL_noop,
     SYSCALL_demo,
     SYSCALL_exit,
+    SYSCALL_gpio,
     SYSCALL_MAX
 };
 
@@ -364,6 +365,7 @@ SYSCALL_STUB(ipcRecv, (Message* msg))
 SYSCALL_STUB(noop, ())
 SYSCALL_STUB(demo, (int a, int b, int c, int d))
 SYSCALL_STUB(exit, (int e))
+SYSCALL_STUB(gpio, (int gpioPin, int gpioCmd))
 
 // TODO move everything up to the above enum to a C header for use in tasks
 
@@ -529,6 +531,7 @@ void systemTask () {
     routes[SYSCALL_noop].set(0, 0); // same as all the default entries
     routes[SYSCALL_demo].set(0, 1);
     routes[SYSCALL_exit].set(0, 2);
+    routes[SYSCALL_gpio].set(0, 3);
 
     while (true) {
         static Message sysMsg; // must be static, else it usage-faults TODO ?
@@ -565,6 +568,19 @@ void systemTask () {
             case 2: // exit
                 wantsReply = false; // TODO will wait forever, must clean up
                 break;
+
+            case 3: { // gpio
+                int /*gpioPin = args[0],*/ gpioCmd = args[1];
+                //char port = 'A' + (gpioPin >> 4) - 0xA;
+                //Pin<port,gpioPin&0xF> pin;
+                PinA<7> pin;
+                switch (gpioCmd) {
+                    case 0: pin.mode(Pinmode::out); break;
+                    case 1: pin = 0; break;
+                    case 2: pin = 1; break;
+                }
+                break;
+            }
 
             default:
                 printf("%d 0: sysroute (0,%d) ?\n", ticks, sr.num);
