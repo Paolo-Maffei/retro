@@ -314,6 +314,13 @@ void Task::dump () {
 // Main entry point: set up the system task (task #0) and start multi-tasking.
 // Note that main knows nothing about system calls, MPU, SVC, or IRQ handlers.
 
+// small recplacement for the boot vector, since we'll use a RAM copy anyway
+extern char _estack[], Reset_Handler[];
+__attribute__ ((section(".boot_vector")))
+char* bootVector[] = { _estack, Reset_Handler };
+
+char impure_data [1];
+
 extern void systemTask ();
 static VTable* irqVec; // without static it crashes FIXME stray mem corruption?
 

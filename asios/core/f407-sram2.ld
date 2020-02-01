@@ -20,10 +20,10 @@ _estack = ORIGIN(RAM) + LENGTH(RAM);
 SECTIONS
 {
   /* The startup code goes first into FLASH */
-  .isr_vector :
+  .boot_vector :
   {
     . = ALIGN(4);
-    KEEP(*(.isr_vector)) /* Startup code */
+    KEEP(*(.boot_vector)) /* Startup code */
     . = ALIGN(4);
   } >FLASH
 
@@ -34,7 +34,6 @@ SECTIONS
     _stext = .;        /* create a global symbol at start of code */
     *(.text)           /* .text sections (code) */
     *(.text*)          /* .text* sections (code) */
-    *(.eh_frame)
 
     KEEP (*(.init))
     KEEP (*(.fini))
