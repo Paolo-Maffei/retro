@@ -46,7 +46,7 @@ Everything else needed for security and robustness has to be done in task #0.
 
 All the other tasks run in unprivileged mode, and cannot escape from it. The
 only thing an App task can do, is perform system calls. Servers and Drivers
-can also perform IPC between them, exchanging fixed-size (64-byte) messages.
+can also perform IPC between them, exchanging fixed-size (32-byte) messages.
 When granted access to (all or part of) I/O space, drivers can perform I/O,
 but even then they can't disable interrupts, or grant themselves more rights.
 For actual data transfers in or out of other tasks, they need to ask task #0.

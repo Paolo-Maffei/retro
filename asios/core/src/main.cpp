@@ -161,7 +161,7 @@ bool listRemove (T*& list, T& item) {
 struct Message {
     uint8_t req;
     uint32_t* args;
-    int filler [14];
+    int filler [6];
 };
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -187,7 +187,7 @@ public:
 
     void init (void* stackTop, void (*func)()) {
         // use the C++11 compiler to verify some design choices
-        static_assert(sizeof (Message) == 64); // fixed and known message size
+        static_assert(sizeof (Message) == 32); // fixed and known message size
         static_assert((sizeof *this & (sizeof *this - 1)) == 0); // power of 2
 
         extern int exit (int); // forward declaration XXX yuck
