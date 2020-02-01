@@ -365,7 +365,7 @@ SYSCALL_STUB(ipcRecv, (Message* msg))
 SYSCALL_STUB(noop, ())
 SYSCALL_STUB(demo, (int a, int b, int c, int d))
 SYSCALL_STUB(exit, (int e))
-SYSCALL_STUB(gpio, (int gpioPin, int gpioCmd))
+SYSCALL_STUB(gpio, (int cmd, int pin))
 
 // TODO move everything up to the above enum to a C header for use in tasks
 
@@ -570,7 +570,7 @@ void systemTask () {
                 break;
 
             case 3: { // gpio
-                int /*gpioPin = args[0],*/ gpioCmd = args[1];
+                int  gpioCmd = args[0]; //gpioPin = args[1];
                 //char port = 'A' + (gpioPin >> 4) - 0xA;
                 //Pin<port,gpioPin&0xF> pin;
                 PinA<7> pin;

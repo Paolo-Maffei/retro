@@ -1,12 +1,12 @@
 #include "syscalls.h"
 
 int main () {
-    gpio(0xA7, 0); // PinA<7>::mode(Pinmode::out)
+    gpio(0, 0xA7); // PinA<7>::mode(Pinmode::out)
 
     while (1) {
-        gpio(0xA7, 1); // PinA<7>::clear()
+        gpio(1, 0xA7); // PinA<7>::clear()
         for (int i = 0; i < 10000000; ++i) asm ("");
-        gpio(0xA7, 2); // PinA<7>::set()
+        gpio(2, 0xA7); // PinA<7>::set()
         for (int i = 0; i < 10000000; ++i) asm ("");
     }
 }
