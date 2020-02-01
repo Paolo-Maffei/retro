@@ -11,4 +11,9 @@ int main () {
     }
 }
 
+// small recplacement for the boot vector, since we'll use a RAM copy anyway
+extern char _estack[], Reset_Handler[];
+__attribute__ ((section(".boot_vector")))
+char* bootVector[] = { _estack, Reset_Handler };
+
 void SystemInit (void) {}

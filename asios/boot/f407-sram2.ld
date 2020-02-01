@@ -4,7 +4,7 @@
 ENTRY(Reset_Handler)
 
 /* Generate a link error if stack doesn't fit into RAM */
-_Min_Stack_Size = 0x400;     /* required amount of stack */
+_Min_Stack_Size = 0x100;     /* required amount of stack */
 
 /* Specify the memory areas */
 MEMORY
@@ -20,10 +20,10 @@ _estack = ORIGIN(RAM) + LENGTH(RAM);
 SECTIONS
 {
   /* The startup code goes first into FLASH */
-  .isr_vector :
+  .boot_vector :
   {
     . = ALIGN(4);
-    KEEP(*(.isr_vector)) /* Startup code */
+    KEEP(*(.boot_vector)) /* Startup code */
     . = ALIGN(4);
   } >FLASH
 
