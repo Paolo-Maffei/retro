@@ -30,18 +30,19 @@ void systemCall (Context *ctx, int request, uint16_t pc) {
 }
 
 int main() {
-    memcpy(context.mem + 0x100, rom, sizeof rom);
+    uint8_t* mem = CCMEM;
+    memcpy(mem + 0x100, rom, sizeof rom);
 
     // Patch the memory of the program. Reset at 0x0000 is trapped by an
     // OUT which will stop emulation. CP/M bdos call 5 is trapped by an IN.
     // See Z80_INPUT_BYTE() and Z80_OUTPUT_BYTE() definitions in z80user.h.
 
-    context.mem[0] = 0xd3;       // OUT N, A
-    context.mem[1] = 0x00;
+    mem[0] = 0xd3;       // OUT N, A
+    mem[1] = 0x00;
 
-    context.mem[5] = 0xdb;       // IN A, N
-    context.mem[6] = 0x00;
-    context.mem[7] = 0xc9;       // RET
+    mem[5] = 0xdb;       // IN A, N
+    mem[6] = 0x00;
+    mem[7] = 0xc9;       // RET
 
     // start emulating
 
