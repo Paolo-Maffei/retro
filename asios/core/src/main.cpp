@@ -539,10 +539,10 @@ void systemTask () {
     };
 
     // set up task 1, using the stack and entry point found in flash memory
-    Task::vec[1].init((void*) MMIO32(0x08004000),
-                      (void (*)()) MMIO32(0x08004004));
+    //Task::vec[1].init((void*) MMIO32(0x08004000),
+    //                  (void (*)()) MMIO32(0x08004004));
 
-#include "test_tasks.h"
+//#include "test_tasks.h"
 
 #if 1
     // set up task 8, also in flash memory, for some additional experiments
@@ -589,8 +589,9 @@ void systemTask () {
             continue;
         }
 
-        printf("%d S: ipc %s req #%d from %d\n",
-                ticks, isCall ? "CALL" : "SEND", req, src);
+        if (sr.num != 3)
+            printf("%d S: ipc %s req #%d from %d\n",
+                    ticks, isCall ? "CALL" : "SEND", req, src);
 
         // request needs to be handled by the system task, i.e. here
         switch (sr.num) {
