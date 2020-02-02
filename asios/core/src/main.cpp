@@ -370,6 +370,7 @@ enum {
     SYSCALL_demo,
     SYSCALL_exit,
     SYSCALL_gpio,
+    SYSCALL_write,
     SYSCALL_MAX
 };
 
@@ -387,6 +388,7 @@ SYSCALL_STUB(noop, ())
 SYSCALL_STUB(demo, (int a, int b, int c, int d))
 SYSCALL_STUB(exit, (int e))
 SYSCALL_STUB(gpio, (int cmd, int pin))
+SYSCALL_STUB(write, (int fd, void const* ptr, int len))
 
 // TODO move everything up to the above enum to a C header for use in tasks
 
@@ -553,6 +555,7 @@ void systemTask () {
     routes[SYSCALL_demo].set(0, 1);
     routes[SYSCALL_exit].set(0, 2);
     routes[SYSCALL_gpio].set(7, 0); // reroute to gpio task
+    routes[SYSCALL_write].set(0, 3);
 
     while (true) {
         Message sysMsg;
@@ -605,6 +608,14 @@ void systemTask () {
                 isCall = false; // TODO waits forever, must clean up
                 printf("%d S: exit requested by %d\n", ticks, src);
                 break;
+
+            case 3: { // write
+                int fd = args[0], len = args[2];
+                uint8_t const* ptr = (uint8_t const*) args[1];
+                for (int i = 0; i < len; ++i)
+                    console.putc(ptr[i]);
+                break;
+            }
 
             default:
                 printf("%d S: sysroute (%d#%d) ?\n", ticks, sr.task, sr.num);

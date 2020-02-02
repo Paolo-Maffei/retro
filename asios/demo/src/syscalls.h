@@ -6,6 +6,7 @@ enum {
     SYSCALL_demo,
     SYSCALL_exit_, // name clash
     SYSCALL_gpio,
+    SYSCALL_write,
     SYSCALL_MAX
 };
 
@@ -19,6 +20,7 @@ SYSCALL_STUB(noop, (void))
 SYSCALL_STUB(demo, (int a, int b, int c, int d))
 SYSCALL_STUB(exit_, (int e))
 SYSCALL_STUB(gpio, (int gpioPin, int gpioCmd))
+SYSCALL_STUB(write, (int fd, void const* ptr, int len))
 
 // small recplacement for the boot vector, since dispatch is now in the kernel
 extern char _estack[], Reset_Handler[];
