@@ -1,6 +1,7 @@
 #include "syscalls.h"
 
 int main () {
+    gpio(0, 0xA7); // FIXME first syscall gets lost?
     gpio(0, 0xA7); // PinA<7>::mode(Pinmode::out)
 
     while (1) {

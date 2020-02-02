@@ -21,7 +21,7 @@ struct DWT {
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Console device and exception handler debugging.
 
-UartBufDev< PinA<9>, PinA<10>, 150 > console;
+UartBufDev< PinA<9>, PinA<10>, 3 > console;
 
 int printf (char const* fmt, ...) {
     va_list ap; va_start(ap, fmt); veprintf(console.putc, fmt, ap); va_end(ap);
@@ -217,7 +217,7 @@ public:
     }
 
     // try to deliver a message to this task
-    int deliver (Message* msg) {
+    int deliver (Task& sender, Message* msg) {
         bool waitingForMe = false;
         if (blocking && blocking != this) { // is it waiting for completion?
             waitingForMe = listRemove(blocking->finishQueue, *this);
@@ -229,14 +229,14 @@ public:
             return -1; // nope, can't deliver this message
 
         *grab(msgBuf) = *msg; // copy message to destination
-        resume(waitingForMe ? 0 : current().index()); // if a reply, return 0
+        resume(waitingForMe ? 0 : sender.index()); // if a reply, return 0
         return 0; // successful delivery
     }
 
     // deal with an incoming message which expects a reply
     int replyTo (Message* msg) {
         Task& sender = current();
-        int e = deliver(msg);
+        int e = deliver(sender, msg);
         // either try delivery again later, or wait for reply
         listAppend(e < 0 ? pendingQueue : finishQueue, sender);
         sender.msgBuf = msg;
@@ -374,7 +374,7 @@ static void do_ipcSend (HardwareStackFrame* sfp) {
     int dst = sfp->r[0];
     Message* msg = (Message*) sfp->r[1];
     // ... validate dst and msg
-    sfp->r[0] = Task::vec[dst].deliver(msg);
+    sfp->r[0] = Task::vec[dst].deliver(Task::current(), msg);
 }
 
 // blocking send + receive, used for request/reply sequences
@@ -523,6 +523,30 @@ void systemTask () {
 
 #include "test_tasks.h"
 
+    DEFINE_TASK(7, 256,
+        while (true) {
+            Message msg;
+            int src = ipcRecv(&msg);
+            uint32_t* args = msg.args;
+
+            int  cmd = args[0]; //gpioPin = args[1];
+            //char port = 'A' + (gpioPin >> 4) - 0xA;
+            //Pin<port,gpioPin&0xF> pin;
+            //printf("%d 7: cmd %d from #%d\n", ticks, cmd, src);
+            PinA<7> pin;
+            switch (cmd) {
+                case 0: pin.mode(Pinmode::out); break;
+                case 1: pin = 0; break;
+                case 2: pin = 1; break;
+            }
+
+            //args[0] = 0; // reply
+            int e = ipcSend(src, &msg);
+            if (e != 0)
+                printf("%d 7: reply send got %d\n", ticks, e);
+        }
+    )
+
     // set up task 1, using the stack and entry point found in flash memory
     Task::vec[1].init((void*) MMIO32(0x08004000),
                       (void (*)()) MMIO32(0x08004004));
@@ -531,7 +555,7 @@ void systemTask () {
     routes[SYSCALL_noop].set(0, 0); // same as all the default entries
     routes[SYSCALL_demo].set(0, 1);
     routes[SYSCALL_exit].set(0, 2);
-    routes[SYSCALL_gpio].set(0, 3);
+    routes[SYSCALL_gpio].set(7, 0); // reroute to gpio task
 
     while (true) {
         static Message sysMsg; // must be static, else it usage-faults TODO ?
@@ -540,20 +564,41 @@ void systemTask () {
         // examine incoming request, it's either an ipcSend or an ipcCall
         int req = sysMsg.req;
         uint32_t* args = sysMsg.args;
-        bool wantsReply = Task::vec[src].blocking == Task::vec;
-        int reply = -1; // the default answer is failure
-
-        printf("%d 0: ipc %s req %d from %d\n",
-                ticks, wantsReply ? "CALL" : "SEND", req, src);
+        Task& sender = Task::vec[src];
+        bool isCall = sender.blocking == Task::vec;
+        int reply = -1; // the default reply is failure
 
         // decide what to do with this request
         SysRoute& sr = routes[(uint8_t) req]; // index is never out of range
+
         if (sr.task != 0) {
-            // TODO needs to be forwarded
+            // The routing table reports that this message should be forwarded.
+            // That's only possible for ipc calls, since re-delivery could fail.
+            // But sends can be addressed directly to the proper task anyway,
+            // no need to use the routing table.
+            if (isCall) {
+#if 0
+                printf("st: rerouting req %d from #%d to #%d\n",
+                        req, src, sr.task);
+#endif
+                listRemove(Task::vec[0].finishQueue, sender);
+                Task& dst = Task::vec[sr.task];
+                sysMsg.req = sr.num;
+                sender.blocking = 0;
+                int e = dst.deliver(sender, &sysMsg);
+                if (e < 0)
+                    listAppend(e < 0 ? dst.pendingQueue : dst.finishQueue, sender);
+                // TODO this fiddling should be merhged into Task class code
+            } else
+                printf("st: can't re-send, req %d from #%d to #%d\n",
+                        req, src, sr.task);
             continue;
         }
 
-        // this request needs to be handled here
+        printf("%d 0: ipc %s req %d from %d\n",
+                ticks, isCall ? "CALL" : "SEND", req, src);
+
+        // request needs to be handled by the system task, i.e. here
         switch (sr.num) {
             case 0: // noop
                 break;
@@ -566,28 +611,15 @@ void systemTask () {
             }
 
             case 2: // exit
-                wantsReply = false; // TODO will wait forever, must clean up
+                isCall = false; // TODO waits forever, must clean up
                 break;
-
-            case 3: { // gpio
-                int  gpioCmd = args[0]; //gpioPin = args[1];
-                //char port = 'A' + (gpioPin >> 4) - 0xA;
-                //Pin<port,gpioPin&0xF> pin;
-                PinA<7> pin;
-                switch (gpioCmd) {
-                    case 0: pin.mode(Pinmode::out); break;
-                    case 1: pin = 0; break;
-                    case 2: pin = 1; break;
-                }
-                break;
-            }
 
             default:
                 printf("%d 0: sysroute (0,%d) ?\n", ticks, sr.num);
         }
 
         // unblock the originating task if it's waiting
-        if (wantsReply) {
+        if (isCall) {
             /*int e =*/ ipcSend(src, &sysMsg);
             //printf("%d 0: replied to #%d with %d status %d\n",
             //        ticks, src, result, e);
