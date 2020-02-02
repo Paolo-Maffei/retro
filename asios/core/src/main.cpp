@@ -523,30 +523,6 @@ void systemTask () {
 
 #include "test_tasks.h"
 
-    DEFINE_TASK(7, 256,
-        while (true) {
-            Message msg;
-            int src = ipcRecv(&msg);
-            uint32_t* args = msg.args;
-
-            int  cmd = args[0]; //gpioPin = args[1];
-            //char port = 'A' + (gpioPin >> 4) - 0xA;
-            //Pin<port,gpioPin&0xF> pin;
-            //printf("%d 7: cmd %d from #%d\n", ticks, cmd, src);
-            PinA<7> pin;
-            switch (cmd) {
-                case 0: pin.mode(Pinmode::out); break;
-                case 1: pin = 0; break;
-                case 2: pin = 1; break;
-            }
-
-            //args[0] = 0; // reply
-            int e = ipcSend(src, &msg);
-            if (e != 0)
-                printf("%d 7: reply send got %d\n", ticks, e);
-        }
-    )
-
     // set up task 1, using the stack and entry point found in flash memory
     Task::vec[1].init((void*) MMIO32(0x08004000),
                       (void (*)()) MMIO32(0x08004004));
