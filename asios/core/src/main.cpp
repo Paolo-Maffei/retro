@@ -263,8 +263,7 @@ public:
         sender.blocking = 0;
         *sender.message = *msg; // copy (possibly modified) request to sender
         int e = deliver(sender, sender.message); // re-deliver
-        if (e < 0)
-            listAppend(e < 0 ? pendingQueue : finishQueue, sender);
+        listAppend(e < 0 ? pendingQueue : finishQueue, sender);
         return true;
     }
 
