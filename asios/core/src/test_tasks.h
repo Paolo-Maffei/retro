@@ -14,7 +14,7 @@ DEFINE_TASK(2, 256,
         if (src == 4) {
             msWait(50);
             msg.req = -msg.req;
-            printf("%d 2: about to reply #%d\n", ticks, msg.req);
+            printf("%d 2: about to reply #%d to %d\n", ticks, msg.req, src);
             int e = ipcSend(src, &msg);
             if (e != 0)
                 printf("%d 2: reply? %d\n", ticks, e);
@@ -93,7 +93,7 @@ DEFINE_TASK(7, 256,
         int  cmd = args[0]; //gpioPin = args[1];
         //char port = 'A' + (gpioPin >> 4) - 0xA;
         //Pin<port,gpioPin&0xF> pin;
-        //printf("%d 7: cmd %d from #%d\n", ticks, cmd, src);
+        //printf("%d 7: cmd %d from %d\n", ticks, cmd, src);
         PinA<7> pin;
         switch (cmd) {
             case 0: pin.mode(Pinmode::out); break;

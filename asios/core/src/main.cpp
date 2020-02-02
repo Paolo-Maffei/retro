@@ -312,7 +312,7 @@ void Task::dump () {
     for (int i = 0; i < MAX_TASKS; ++i) {
         Task& t = Task::vec[i];
         if (t.pspSaved) {
-            printf("[%03x] %2d: %c%c sp %08x", (uint32_t) &t & 0xFFF,
+            printf("  [%03x] %2d: %c%c sp %08x", (uint32_t) &t & 0xFFF,
                     i, " *<~"[t.type], "USWRA"[t.state()], t.pspSaved);
             printf(" blkg %2d pend %08x fini %08x mbuf %08x\n",
                     t.blocking == 0 ? -1 : t.blocking->index(),
@@ -340,6 +340,14 @@ int main () {
     console.baud(115200, fullSpeedClock()/2);
     setupFaultHandlers();
     wait_ms(200); // give platformio's console time to connect
+
+    // display some memory usage info for the kernel + system task
+    extern char _stext[], _sidata[], _sdata[],
+                _edata[], _sbss[], _ebss[], _estack[];
+    uint32_t dataSz = _edata - _sdata, bssSz = _ebss - _sbss;
+    uint32_t textSz = (_sidata - _stext) + dataSz; // incl data init
+    printf("text %08x %db data %08x %db bss %08x %db brk..msp %db\n",
+            _stext, textSz, _sdata, dataSz, _sbss, bssSz, _estack - _ebss);
 
     irqVec = &VTableRam(); // this call can't be used in thread mode XXX yuck
 
@@ -510,13 +518,6 @@ void systemTask () {
     // then triggering it (i.e. through a replaced SVC call). This is used here
     // to fix up a few details which can't be done in unprivileged mode.
 
-    extern char _stext[], _sidata[], _sdata[],
-                _edata[], _sbss[], _ebss[], _estack[];
-    uint32_t dataSz = _edata - _sdata, bssSz = _ebss - _sbss;
-    uint32_t textSz = (_sidata - _stext) + dataSz; // incl data init
-    printf("st: text %08x %db data %08x %db bss %08x %db brk..msp %db\n",
-            _stext, textSz, _sdata, dataSz, _sbss, bssSz, _estack - _ebss);
-
     runPrivileged([] {
         // lower the priority level of SVCs: this allows handling SVC requests
         // from thread state, but not from exception handlers (an SVC call which
@@ -535,11 +536,17 @@ void systemTask () {
         yield = false;
     };
 
-#include "test_tasks.h"
-
     // set up task 1, using the stack and entry point found in flash memory
     Task::vec[1].init((void*) MMIO32(0x08004000),
                       (void (*)()) MMIO32(0x08004004));
+
+#include "test_tasks.h"
+
+#if 1
+    // set up task 8, also in flash memory, for some additional experiments
+    Task::vec[8].init((void*) MMIO32(0x08008000),
+                      (void (*)()) MMIO32(0x08008004));
+#endif
 
     // these requests are handled by this system task
     routes[SYSCALL_noop].set(0, 0); // same as all the default entries
@@ -566,20 +573,20 @@ void systemTask () {
             // That's only possible for ipc calls, since re-sending could fail.
             // But sends should be addressed directly to the proper task anyway.
             if (isCall) {
-                //printf("st: rerouting req %d from #%d to #%d\n",
+                //printf("S: rerouting req #%d from %d to %d\n",
                 //        req, src, sr.task);
                 sysMsg.req = sr.num; // adjust the request before forwarding
                 bool f = Task::vec[sr.task].forward(sender, &sysMsg);
                 if (!f)
-                    printf("st: forward failed, req %d from #%d to #%d\n",
+                    printf("S: forward failed, req #%d from %d to %d\n",
                             req, src, sr.task);
             } else
-                printf("st: can't re-send, req %d from #%d to #%d\n",
+                printf("S: can't re-send, req #%d from %d to %d\n",
                         req, src, sr.task);
             continue;
         }
 
-        printf("%d 0: ipc %s req %d from %d\n",
+        printf("%d S: ipc %s req #%d from %d\n",
                 ticks, isCall ? "CALL" : "SEND", req, src);
 
         // request needs to be handled by the system task, i.e. here
@@ -588,7 +595,7 @@ void systemTask () {
                 break;
 
             case 1: { // demo
-                printf("<demo %d %d %d %d>\n",
+                printf("\t<demo %d %d %d %d>\n",
                         args[0], args[1], args[2], args[3]);
                 reply = args[0] + args[1] + args[2] + args[3];
                 break;
@@ -596,17 +603,18 @@ void systemTask () {
 
             case 2: // exit
                 isCall = false; // TODO waits forever, must clean up
+                printf("%d S: exit requested by %d\n", ticks, src);
                 break;
 
             default:
-                printf("%d 0: sysroute (0,%d) ?\n", ticks, sr.num);
+                printf("%d S: sysroute (%d#%d) ?\n", ticks, sr.task, sr.num);
         }
 
         // unblock the originating task if it's waiting
         if (isCall) {
             /*int e =*/ ipcSend(src, &sysMsg);
-            //printf("%d 0: replied to #%d with %d status %d\n",
-            //        ticks, src, result, e);
+            //printf("%d 0: replied to %d with %d status %d\n",
+            //        ticks, src, reply, e);
             args[0] = reply; // replace resume's result with actual one
         }
     }

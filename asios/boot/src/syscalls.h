@@ -19,3 +19,11 @@ SYSCALL_STUB(noop, (void))
 SYSCALL_STUB(demo, (int a, int b, int c, int d))
 SYSCALL_STUB(exit_, (int e))
 SYSCALL_STUB(gpio, (int gpioPin, int gpioCmd))
+
+// small recplacement for the boot vector, since dispatch is now in the kernel
+extern char _estack[], Reset_Handler[];
+__attribute__ ((section(".boot_vector")))
+char* bootVector[] = { _estack, Reset_Handler };
+
+// disabled all privileged configuration code
+void SystemInit (void) {}
