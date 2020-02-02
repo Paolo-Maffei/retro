@@ -172,9 +172,9 @@ public:
     uint32_t* pspSaved; // MUST be first in task objects, see PendSV_Handler
     uint32_t* mpuMaps;  // MUST be second in task objects, see PendSV_Handler
     Task* blocking;     // set while waiting, to task we're queued on, or self
+    Message* message;   // set while recv or reply can take a new message
     Task* pendingQueue; // tasks waiting for their call to be accepted
     Task* finishQueue;  // tasks waiting for their call to be completed
-    Message* msgBuf;    // set while recv or reply can take a new message
     Task* next;         // used in waiting tasks, i.e. when on some linked list
 
     enum { Early, App, Server, Driver }; // type of task
@@ -225,10 +225,10 @@ public:
                 return -1; // waiting on something else, reject this delivery
         }
 
-        if (msgBuf == 0) // is this task ready to receive a message?
+        if (message == 0) // is this task ready to receive a message?
             return -1; // nope, can't deliver this message
 
-        *grab(msgBuf) = *msg; // copy message to destination
+        *grab(message) = *msg; // copy message to destination
         resume(waitingForMe ? 0 : sender.index()); // if a reply, return 0
         return 0; // successful delivery
     }
@@ -239,7 +239,7 @@ public:
         int e = deliver(sender, msg);
         // either try delivery again later, or wait for reply
         listAppend(e < 0 ? pendingQueue : finishQueue, sender);
-        sender.msgBuf = msg;
+        sender.message = msg;
         return sender.suspend(this);
     }
 
@@ -249,10 +249,10 @@ public:
             Task& sender = *pendingQueue;
             pendingQueue = grab(pendingQueue->next);
             listAppend(finishQueue, sender);
-            *msg = *sender.msgBuf; // copy message to this receiver
+            *msg = *sender.message; // copy message to this receiver
             return sender.index();
         }
-        msgBuf = msg;
+        message = msg;
         return suspend(this);
     }
 
@@ -305,7 +305,7 @@ void Task::dump () {
                     i, " *<~"[t.type], "USWRA"[t.state()], t.pspSaved);
             printf(" blkg %2d pend %08x fini %08x mbuf %08x\n",
                     t.blocking == 0 ? -1 : t.blocking->index(),
-                    t.pendingQueue, t.finishQueue, t.msgBuf);
+                    t.pendingQueue, t.finishQueue, t.message);
         }
     }
 }
