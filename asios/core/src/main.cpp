@@ -21,7 +21,7 @@ struct DWT {
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Console device and exception handler debugging.
 
-UartBufDev< PinA<9>, PinA<10>, 3 > console;
+UartBufDev< PinA<9>, PinA<10>, 150 > console;
 
 int printf (char const* fmt, ...) {
     va_list ap; va_start(ap, fmt); veprintf(console.putc, fmt, ap); va_end(ap);
@@ -256,6 +256,18 @@ public:
         return suspend(this);
     }
 
+    // forward current call to this destination
+    bool forward (Task& sender, Message* msg) {
+        if (!listRemove(current().finishQueue, sender))
+            return false;
+        sender.blocking = 0;
+        *sender.message = *msg; // copy (possibly modified) request to sender
+        int e = deliver(sender, sender.message); // re-deliver
+        if (e < 0)
+            listAppend(e < 0 ? pendingQueue : finishQueue, sender);
+        return true;
+    }
+
     static void dump ();
 
 private:
@@ -346,6 +358,7 @@ enum {
     SYSCALL_ipcSend,
     SYSCALL_ipcCall,
     SYSCALL_ipcRecv,
+    //SYSCALL_ipcPass,
     SYSCALL_noop,
     SYSCALL_demo,
     SYSCALL_exit,
@@ -362,6 +375,7 @@ enum {
 SYSCALL_STUB(ipcSend, (int dst, Message* msg))
 SYSCALL_STUB(ipcCall, (int dst, Message* msg))
 SYSCALL_STUB(ipcRecv, (Message* msg))
+//SYSCALL_STUB(ipcPass, (int dst, Message* msg))
 SYSCALL_STUB(noop, ())
 SYSCALL_STUB(demo, (int a, int b, int c, int d))
 SYSCALL_STUB(exit, (int e))
@@ -432,6 +446,7 @@ void SVC_Handler () {
         case SYSCALL_ipcSend: do_ipcSend(psp); break;
         case SYSCALL_ipcCall: do_ipcCall(psp); break;
         case SYSCALL_ipcRecv: do_ipcRecv(psp); break;
+        //case SYSCALL_ipcPass: do_ipcPass(psp); break;
 
         default: { // wrap into an ipcCall to task #0
             // msg can be on the stack, because task #0 always accepts 'em now
@@ -534,10 +549,10 @@ void systemTask () {
     routes[SYSCALL_gpio].set(7, 0); // reroute to gpio task
 
     while (true) {
-        static Message sysMsg; // must be static, else it usage-faults TODO ?
+        Message sysMsg;
         int src = ipcRecv(&sysMsg);
 
-        // examine incoming request, it's either an ipcSend or an ipcCall
+        // examine the incoming request, calls will need a reply
         int req = sysMsg.req;
         uint32_t* args = sysMsg.args;
         Task& sender = Task::vec[src];
@@ -549,22 +564,16 @@ void systemTask () {
 
         if (sr.task != 0) {
             // The routing table reports that this message should be forwarded.
-            // That's only possible for ipc calls, since re-delivery could fail.
-            // But sends can be addressed directly to the proper task anyway,
-            // no need to use the routing table.
+            // That's only possible for ipc calls, since re-sending could fail.
+            // But sends should be addressed directly to the proper task anyway.
             if (isCall) {
-#if 0
-                printf("st: rerouting req %d from #%d to #%d\n",
-                        req, src, sr.task);
-#endif
-                listRemove(Task::vec[0].finishQueue, sender);
-                Task& dst = Task::vec[sr.task];
-                sysMsg.req = sr.num;
-                sender.blocking = 0;
-                int e = dst.deliver(sender, &sysMsg);
-                if (e < 0)
-                    listAppend(e < 0 ? dst.pendingQueue : dst.finishQueue, sender);
-                // TODO this fiddling should be merhged into Task class code
+                //printf("st: rerouting req %d from #%d to #%d\n",
+                //        req, src, sr.task);
+                sysMsg.req = sr.num; // adjust the request before forwarding
+                bool f = Task::vec[sr.task].forward(sender, &sysMsg);
+                if (!f)
+                    printf("st: forward failed, req %d from #%d to #%d\n",
+                            req, src, sr.task);
             } else
                 printf("st: can't re-send, req %d from #%d to #%d\n",
                         req, src, sr.task);
