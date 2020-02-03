@@ -1,6 +1,6 @@
 #include <string.h>
+#include <syslib.h>
 
-#include "syscalls.h"
 #include "context.h"
 #include "z80emu.h"
 

@@ -1,4 +1,4 @@
-#include "syscalls.h"
+#include "syslib.h"
 
 int main () {
     gpio(0, 0xA7); // FIXME first syscall gets lost?
