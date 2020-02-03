@@ -2,7 +2,11 @@
 // System call handlers and dispatch vector. These always run in SVC context.
 
 enum {
-    SYSCALL_noop = 3,
+    SYSCALL_ipcSend,
+    SYSCALL_ipcCall,
+    SYSCALL_ipcRecv,
+    //SYSCALL_ipcPass,
+    SYSCALL_noop,
     SYSCALL_demo,
     SYSCALL_exit_, // name clash
     SYSCALL_gpio,
@@ -15,7 +19,13 @@ enum {
     __attribute__((naked)) int name args \
     { asm volatile ("svc %0; bx lr" :: "i" (SYSCALL_ ## name)); }
 
+struct Message;
+
 // these are all the system call stubs
+SYSCALL_STUB(ipcSend, (int dst, struct Message* msg))
+SYSCALL_STUB(ipcCall, (int dst, struct Message* msg))
+SYSCALL_STUB(ipcRecv, (struct Message* msg))
+//SYSCALL_STUB(ipcPass, (int dst, Message* msg))
 SYSCALL_STUB(noop, (void))
 SYSCALL_STUB(demo, (int a, int b, int c, int d))
 SYSCALL_STUB(exit_, (int e))

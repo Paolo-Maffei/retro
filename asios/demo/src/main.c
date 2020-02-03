@@ -10,7 +10,7 @@ const uint8_t rom [] = {
 
 Context context;
 
-void putc (char c) { write(1, &c, 1); }
+void putch (char c) { write(1, &c, 1); }
 
 void systemCall (Context *ctx, int request, uint16_t pc) {
     Z80_STATE* s = &ctx->state;
@@ -19,12 +19,12 @@ void systemCall (Context *ctx, int request, uint16_t pc) {
     switch (s->registers.byte[Z80_C]) {
 
         case 2: // output the character in E
-            putc(s->registers.byte[Z80_E]);
+            putch(s->registers.byte[Z80_E]);
             break;
 
         case 9: // output the string in DE until '$' terminator
             for (int i = s->registers.word[Z80_DE]; *mapMem(ctx, i) != '$'; ++i)
-                putc(*mapMem(ctx, i));
+                putch(*mapMem(ctx, i));
             break;
     }
 }

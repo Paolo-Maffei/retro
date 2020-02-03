@@ -167,6 +167,8 @@ struct Message {
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Tasks and task management.
 
+extern "C" int exit_ (int); // forward declaration XXX yuck
+
 class Task {
 public:
     uint32_t* pspSaved; // MUST be first in task objects, see PendSV_Handler
@@ -190,10 +192,8 @@ public:
         static_assert(sizeof (Message) == 32); // fixed and known message size
         static_assert((sizeof *this & (sizeof *this - 1)) == 0); // power of 2
 
-        extern int exit (int); // forward declaration XXX yuck
-
         HardwareStackFrame* psp = (HardwareStackFrame*) stackTop - 1;
-        psp->lr = (uint32_t) exit;
+        psp->lr = (uint32_t) exit_;
         psp->pc = (uint32_t) func;
         psp->psr = 0x01000000;
         pspSaved = (uint32_t*) psp - PSP_EXTRA;
@@ -325,13 +325,6 @@ void Task::dump () {
 // Main entry point: set up the system task (task #0) and start multi-tasking.
 // Note that main knows nothing about system calls, MPU, SVC, or IRQ handlers.
 
-// small recplacement for the boot vector, since we'll use a RAM copy anyway
-extern char _estack[], Reset_Handler[];
-__attribute__ ((section(".boot_vector")))
-char* bootVector[] = { _estack, Reset_Handler };
-
-char impure_data [1];
-
 extern void systemTask ();
 static VTable* irqVec; // without static it crashes FIXME stray mem corruption?
 
@@ -361,6 +354,7 @@ int main () {
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // System call handlers and dispatch vector. These always run in SVC context.
 
+#if 0
 enum {
     SYSCALL_ipcSend,
     SYSCALL_ipcCall,
@@ -368,7 +362,7 @@ enum {
     //SYSCALL_ipcPass,
     SYSCALL_noop,
     SYSCALL_demo,
-    SYSCALL_exit,
+    SYSCALL_exit_,
     SYSCALL_gpio,
     SYSCALL_write,
     SYSCALL_MAX
@@ -386,9 +380,14 @@ SYSCALL_STUB(ipcRecv, (Message* msg))
 //SYSCALL_STUB(ipcPass, (int dst, Message* msg))
 SYSCALL_STUB(noop, ())
 SYSCALL_STUB(demo, (int a, int b, int c, int d))
-SYSCALL_STUB(exit, (int e))
+SYSCALL_STUB(exit_, (int e))
 SYSCALL_STUB(gpio, (int cmd, int pin))
 SYSCALL_STUB(write, (int fd, void const* ptr, int len))
+#else
+extern "C" {
+#include <syslib.h>
+}
+#endif
 
 // TODO move everything up to the above enum to a C header for use in tasks
 
@@ -539,12 +538,12 @@ void systemTask () {
     };
 
     // set up task 1, using the stack and entry point found in flash memory
-    //Task::vec[1].init((void*) MMIO32(0x08004000),
-    //                  (void (*)()) MMIO32(0x08004004));
-
-//#include "test_tasks.h"
+    Task::vec[1].init((void*) MMIO32(0x08004000),
+                      (void (*)()) MMIO32(0x08004004));
 
 #if 1
+#include "test_tasks.h"
+#else
     // set up task 8, also in flash memory, for some additional experiments
     Task::vec[8].init((void*) MMIO32(0x08008000),
                       (void (*)()) MMIO32(0x08008004));
@@ -553,7 +552,7 @@ void systemTask () {
     // these requests are handled by this system task
     routes[SYSCALL_noop].set(0, 0); // same as all the default entries
     routes[SYSCALL_demo].set(0, 1);
-    routes[SYSCALL_exit].set(0, 2);
+    routes[SYSCALL_exit_].set(0, 2);
     routes[SYSCALL_gpio].set(7, 0); // reroute to gpio task
     routes[SYSCALL_write].set(0, 3);
 
@@ -611,7 +610,7 @@ void systemTask () {
                 break;
 
             case 3: { // write
-                int fd = args[0], len = args[2];
+                int /*fd = args[0],*/ len = args[2];
                 uint8_t const* ptr = (uint8_t const*) args[1];
                 for (int i = 0; i < len; ++i)
                     console.putc(ptr[i]);
