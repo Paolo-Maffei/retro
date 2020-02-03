@@ -36,13 +36,13 @@ _easily_ be able to run circles around these old systems. With just a few chips.
 
 The layout of this project area is as follows:
 
-* `core/` - This contains the microkernel, is built and installed with
+* `src/core/` - This contains the microkernel, is built and installed with
   PlatformIO, and ends up at the boot location in flash (0x08000000..3FFF),
   using only the top 8k of RAM (0x2001E000..FFFF). Also linked in, is the
   "system task", which acts as interface to privileged mode access. This task is
   responsible for loading and launching the "boot" task.
 
-* `boot/` - This is a self-contained image, built in the same way as the core,
+* `src/boot/` - This is a self-contained image, built in the same way as the core,
   and saved in flash just above the kernel (0x08004000 and up). It can be
   anything, from a single large application which takes up all remaining flash
   and RAM, launching built-in tasks as it sees fit, to a small "system boot"
