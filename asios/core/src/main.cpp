@@ -541,7 +541,7 @@ void systemTask () {
     Task::vec[1].init((void*) MMIO32(0x08004000),
                       (void (*)()) MMIO32(0x08004004));
 
-#if 1
+#if 0
 #include "test_tasks.h"
 #else
     // set up task 8, also in flash memory, for some additional experiments
