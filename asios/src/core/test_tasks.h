@@ -68,6 +68,7 @@ DEFINE_TASK(5, 256,
     printf("%d 5: about to exit\n", ticks);
 )
 
+#if 0
 DEFINE_TASK(6, 256,
     PinA<6> led2;
     led2.mode(Pinmode::out);
@@ -82,6 +83,7 @@ DEFINE_TASK(6, 256,
             printf("%d n? %d\n", ticks, n);
     }
 )
+#endif
 
 // gpio driver
 DEFINE_TASK(7, 256,
@@ -94,7 +96,8 @@ DEFINE_TASK(7, 256,
         //char port = 'A' + (gpioPin >> 4) - 0xA;
         //Pin<port,gpioPin&0xF> pin;
         //printf("%d 7: cmd %d from %d\n", ticks, cmd, src);
-        PinA<7> pin;
+        //PinA<7> pin;
+        PinE<0> pin;
         switch (cmd) {
             case 0: pin.mode(Pinmode::out); break;
             case 1: pin = 0; break;

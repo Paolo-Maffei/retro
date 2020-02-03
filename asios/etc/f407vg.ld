@@ -6,13 +6,6 @@ ENTRY(Reset_Handler)
 /* Generate a link error if stack doesn't fit into RAM */
 _Min_Stack_Size = 0x100;     /* required amount of stack */
 
-/* Specify the memory areas */
-MEMORY
-{
-    RAM (xrw)       : ORIGIN = 0x2001C000, LENGTH = 4K
-    FLASH (rx)      : ORIGIN = 0x08008000, LENGTH = 32K
-}
-
 /* Highest address of the user mode stack */ 
 _estack = ORIGIN(RAM) + LENGTH(RAM);
 
