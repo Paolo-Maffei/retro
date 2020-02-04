@@ -619,11 +619,12 @@ void systemTask () {
                 uint8_t* ptr = (uint8_t*) args[2];
                 bool wflag = pos >> 31;
                 pos &= 0x7FFFFFFF;
+                printf("diskio w %d p %d @ %08x c %d\n", wflag, pos, ptr, cnt);
                 for (uint32_t i = 0; i < cnt; ++i) {
                     if (wflag)
-                        disk.writeSector(pos + 1, ptr);
+                        disk.writeSector(pos + i, ptr);
                     else
-                        disk.readSector(pos + 1, ptr);
+                        disk.readSector(pos + i, ptr);
                     ptr += 128;
                 }
                 reply = 0;

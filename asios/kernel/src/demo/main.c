@@ -62,7 +62,8 @@ void systemCall (Context *ctx, int req, uint16_t pc) {
 }
 
 int main() {
-    putch("?"); // FIXME first call lost?
+    for (int i = 0; i < 10000000; ++i) asm ("");
+    putch('?'); // FIXME first call lost?
     diskio(0, 0 | (1<<31), (void*) rom, (sizeof rom + 127) / 128);
 
     uint8_t* mem = CCMEM;
