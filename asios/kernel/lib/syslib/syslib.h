@@ -14,12 +14,18 @@ enum {
     SYSCALL_MAX
 };
 
+struct Message;
+
 // helper to define system call stubs (up to 4 typed args, returning int)
+#ifndef DEFINE_SYSCALLS
+#define SYSCALL_STUB(name, args) extern int name args;
+#else
+// TODO find a way to inline asm code, "svc #n" is shorter & faster than a call
+// the problem is that gcc fails to set up the arg regs when inlining is forced
 #define SYSCALL_STUB(name, args) \
     __attribute__((naked)) int name args \
     { asm volatile ("svc %0; bx lr" :: "i" (SYSCALL_ ## name)); }
-
-struct Message;
+#endif
 
 // these are all the system call stubs
 SYSCALL_STUB(ipcSend, (int dst, struct Message* msg))
@@ -31,11 +37,3 @@ SYSCALL_STUB(demo, (int a, int b, int c, int d))
 SYSCALL_STUB(exit_, (int e))
 SYSCALL_STUB(gpio, (int gpioPin, int gpioCmd))
 SYSCALL_STUB(write, (int fd, void const* ptr, int len))
-
-// small recplacement for the boot vector, since dispatch is now in the kernel
-extern char _estack[], Reset_Handler[];
-__attribute__ ((section(".boot_vector")))
-char* bootVector[] = { _estack, Reset_Handler };
-
-// disabled all privileged configuration code
-void SystemInit (void) {}
