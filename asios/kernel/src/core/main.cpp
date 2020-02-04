@@ -566,11 +566,11 @@ void systemTask () {
                         req, src, sr.task);
             continue;
         }
-
-        if (sr.num != 3)
+#if 1
+        if (sr.num != 3 && req != 9)
             printf("%d S: ipc %s req #%d from %d\n",
                     ticks, isCall ? "CALL" : "SEND", req, src);
-
+#endif
         // request needs to be handled by the system task, i.e. here
         switch (sr.num) {
             case 0: // noop
