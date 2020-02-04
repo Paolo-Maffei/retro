@@ -11,6 +11,9 @@ enum {
     SYSCALL_exit_, // name clash
     SYSCALL_gpio,
     SYSCALL_write,
+    SYSCALL_read,
+    SYSCALL_ioctl,
+    SYSCALL_diskio,
     SYSCALL_MAX
 };
 
@@ -37,3 +40,6 @@ SYSCALL_STUB(demo, (int a, int b, int c, int d))
 SYSCALL_STUB(exit_, (int e))
 SYSCALL_STUB(gpio, (int gpioPin, int gpioCmd))
 SYSCALL_STUB(write, (int fd, void const* ptr, int len))
+SYSCALL_STUB(read, (int fd, void* ptr, int len))
+SYSCALL_STUB(ioctl, (int fd, int req, ...))
+SYSCALL_STUB(diskio, (int dev, int pos, void* buf, int cnt))

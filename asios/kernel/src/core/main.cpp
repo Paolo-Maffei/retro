@@ -1,5 +1,9 @@
 #include <jee.h>
 
+#include <string.h>
+#include "flashwear.h" // TODO this probably shouldn't be in the kernel
+FlashWear disk;
+
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // This stuff should probably be in JeeH, perhaps arch/stm32f4.h ?
 
@@ -160,8 +164,11 @@ bool listRemove (T*& list, T& item) {
 
 struct Message {
     uint8_t req;
-    uint32_t* args;
-    int filler [6];
+    uint8_t extra [3];
+    union {
+        uint32_t* args;
+        int payload [7];
+    };
 };
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -522,6 +529,9 @@ void systemTask () {
     routes[SYSCALL_exit_].set(0, 2);
     routes[SYSCALL_gpio].set(7, 0); // reroute to gpio task
     routes[SYSCALL_write].set(0, 3);
+    routes[SYSCALL_read].set(0, 4);
+    routes[SYSCALL_ioctl].set(0, 5);
+    routes[SYSCALL_diskio].set(0, 6);
 
     while (true) {
         Message sysMsg;
@@ -572,8 +582,8 @@ void systemTask () {
             }
 
             case 2: // exit
-                isCall = false; // TODO waits forever, must clean up
                 printf("%d S: exit requested by %d\n", ticks, src);
+                isCall = false; // TODO waits forever, must clean up
                 break;
 
             case 3: { // write
@@ -581,6 +591,45 @@ void systemTask () {
                 uint8_t const* ptr = (uint8_t const*) args[1];
                 for (int i = 0; i < len; ++i)
                     console.putc(ptr[i]);
+                reply = len;
+                break;
+            }
+
+            case 4: { // read
+                int /*fd = args[0],*/ len = args[2];
+                uint8_t* ptr = (uint8_t*) args[1];
+                for (int i = 0; i < len; ++i)
+                    ptr[i] = console.getc();
+                reply = len;
+                break;
+            }
+
+            case 5: { // ioctl, assumes FIONREAD on stdin for now
+                //int fd = args[0], req = args[2];
+                int* ptr = (int*) args[2];
+                *ptr = console.readable();
+                reply = 0;
+                break;
+            }
+
+            case 6: { // diskio
+                static bool inited = false;
+                if (!inited) {
+                    inited = true;
+                    disk.init(true);
+                }
+                int /*fd = args[0],*/ pos = args[1], cnt = args[3];
+                uint8_t* ptr = (uint8_t*) args[2];
+                bool wflag = pos < 0;
+                pos &= 0x7FFFFFFF;
+                for (int i = 0; i < cnt; ++i) {
+                    if (wflag)
+                        disk.writeSector(pos + 1, ptr);
+                    else
+                        disk.readSector(pos + 1, ptr);
+                    ptr += 128;
+                }
+                reply = 0;
                 break;
             }
 

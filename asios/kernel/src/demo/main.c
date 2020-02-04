@@ -10,22 +10,42 @@ const uint8_t rom [] = {
 
 Context context;
 
-void putch (char c) { write(1, &c, 1); }
+static int getch (void) { int v = -1; read(0, &v, 1); return v; }
+static void putch (char c) { write(1, &c, 1); }
 
-void systemCall (Context *ctx, int request, uint16_t pc) {
+void systemCall (Context *ctx, int req, uint16_t pc) {
     Z80_STATE* s = &ctx->state;
 
-    // emulate CP/M bdos calls from 0x0005, register C functions 2 and 9
     switch (s->registers.byte[Z80_C]) {
+
+        case 0: { // return true if there's input
+            int n = 0;
+            ioctl(0, /*FIONREAD*/ 0, &n);
+            s->registers.byte[Z80_A] = n ? 0xFF : 0x00;
+            break;
+        }
+
+        case 1: // wait for input, return in A
+            s->registers.byte[Z80_A] = getch();
+            break;
 
         case 2: // output the character in E
             putch(s->registers.byte[Z80_E]);
+            break;
+
+        case 3: // output the string in DE until null byte
+            for (int i = s->registers.word[Z80_DE]; *mapMem(ctx, i) != 0; ++i)
+                putch(*mapMem(ctx, i));
             break;
 
         case 9: // output the string in DE until '$' terminator
             for (int i = s->registers.word[Z80_DE]; *mapMem(ctx, i) != '$'; ++i)
                 putch(*mapMem(ctx, i));
             break;
+
+        default:
+            printf("Z: sysreq %d @ %04x ?\n", req, pc);
+            while (1) {}
     }
 }
 
