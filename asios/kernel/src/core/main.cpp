@@ -356,6 +356,7 @@ int main () {
     Task::vec[0].init(stack_0 + sizeof stack_0, systemTask);
 
     disk.init(); // TODO flashwear disk shouldn't be here
+
     Task::run(); // the big leap into unprivileged thread mode, never returns
 }
 
@@ -614,16 +615,11 @@ void systemTask () {
             }
 
             case 6: { // diskio
-                static bool inited = false;
-                if (!inited) {
-                    inited = true;
-                    disk.init(true);
-                }
-                int /*dev = args[0],*/ pos = args[1], cnt = args[3];
+                uint32_t /*dev = args[0],*/ pos = args[1], cnt = args[3];
                 uint8_t* ptr = (uint8_t*) args[2];
-                bool wflag = pos < 0;
+                bool wflag = pos >> 31;
                 pos &= 0x7FFFFFFF;
-                for (int i = 0; i < cnt; ++i) {
+                for (uint32_t i = 0; i < cnt; ++i) {
                     if (wflag)
                         disk.writeSector(pos + 1, ptr);
                     else

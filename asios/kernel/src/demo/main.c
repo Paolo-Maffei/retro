@@ -42,15 +42,9 @@ void systemCall (Context *ctx, int req, uint16_t pc) {
         case 4: { // r/w diskio
                 int out = (B & 0x80) != 0;
                 uint8_t sec = DE, trk = DE >> 8, dsk = A, cnt = B & 0x7F;
-                uint32_t pos = 2048*dsk + 26*trk + sec;  // no skewing
+                uint32_t pos = 26*trk + sec;  // no skewing
 
-                for (int i = 0; i < cnt; ++i) {
-                    void* mem = mapMem(&context, HL + 128*i);
-                    if (out)
-                        diskio(dsk, (pos + i) | (1<<31), mem, 1);
-                    else
-                        diskio(dsk, (pos + i), mem, 1);
-                }
+                diskio(dsk, pos | (out ? 1<<31 : 0), mapMem(&context, HL), cnt);
             }
             A = 0;
             break;
@@ -68,6 +62,9 @@ void systemCall (Context *ctx, int req, uint16_t pc) {
 }
 
 int main() {
+    putch("?"); // FIXME first call lost?
+    diskio(0, 0 | (1<<31), (void*) rom, (sizeof rom + 127) / 128);
+
     uint8_t* mem = CCMEM;
     memcpy(mem + 0x100, rom, sizeof rom);
 
