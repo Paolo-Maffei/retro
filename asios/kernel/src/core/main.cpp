@@ -355,6 +355,7 @@ int main () {
     alignas(8) static uint8_t stack_0 [256];
     Task::vec[0].init(stack_0 + sizeof stack_0, systemTask);
 
+    disk.init(); // TODO flashwear disk shouldn't be here
     Task::run(); // the big leap into unprivileged thread mode, never returns
 }
 
@@ -618,7 +619,7 @@ void systemTask () {
                     inited = true;
                     disk.init(true);
                 }
-                int /*fd = args[0],*/ pos = args[1], cnt = args[3];
+                int /*dev = args[0],*/ pos = args[1], cnt = args[3];
                 uint8_t* ptr = (uint8_t*) args[2];
                 bool wflag = pos < 0;
                 pos &= 0x7FFFFFFF;

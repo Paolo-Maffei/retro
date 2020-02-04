@@ -3,6 +3,7 @@
 
 #include "context.h"
 #include "z80emu.h"
+#include "macros.h"
 
 const uint8_t rom [] = {
 #include "zexall.h"
@@ -14,37 +15,54 @@ static int getch (void) { int v = -1; read(0, &v, 1); return v; }
 static void putch (char c) { write(1, &c, 1); }
 
 void systemCall (Context *ctx, int req, uint16_t pc) {
-    Z80_STATE* s = &ctx->state;
+    Z80_STATE* state = &ctx->state;
 
-    switch (s->registers.byte[Z80_C]) {
+    switch (state->registers.byte[Z80_C]) {
 
         case 0: { // return true if there's input
             int n = 0;
             ioctl(0, /*FIONREAD*/ 0, &n);
-            s->registers.byte[Z80_A] = n ? 0xFF : 0x00;
+            A = n ? 0xFF : 0x00;
             break;
         }
 
         case 1: // wait for input, return in A
-            s->registers.byte[Z80_A] = getch();
+            A = getch();
             break;
 
         case 2: // output the character in E
-            putch(s->registers.byte[Z80_E]);
+            putch((uint8_t) DE);
             break;
 
         case 3: // output the string in DE until null byte
-            for (int i = s->registers.word[Z80_DE]; *mapMem(ctx, i) != 0; ++i)
+            for (int i = DE; *mapMem(ctx, i) != 0; ++i)
                 putch(*mapMem(ctx, i));
             break;
 
+        case 4: { // r/w diskio
+                int out = (B & 0x80) != 0;
+                uint8_t sec = DE, trk = DE >> 8, dsk = A, cnt = B & 0x7F;
+                uint32_t pos = 2048*dsk + 26*trk + sec;  // no skewing
+
+                for (int i = 0; i < cnt; ++i) {
+                    void* mem = mapMem(&context, HL + 128*i);
+                    if (out)
+                        diskio(dsk, (pos + i) | (1<<31), mem, 1);
+                    else
+                        diskio(dsk, (pos + i), mem, 1);
+                }
+            }
+            A = 0;
+            break;
+
         case 9: // output the string in DE until '$' terminator
-            for (int i = s->registers.word[Z80_DE]; *mapMem(ctx, i) != '$'; ++i)
+            for (int i = DE; *mapMem(ctx, i) != '$'; ++i)
                 putch(*mapMem(ctx, i));
             break;
 
         default:
-            printf("Z: sysreq %d @ %04x ?\n", req, pc);
+            //printf("Z: sysreq %d @ %04x ?\n", req, pc);
+            write(2, "\n*** sysreq? ***\n", 17);
             while (1) {}
     }
 }
