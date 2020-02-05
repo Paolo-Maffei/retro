@@ -17,9 +17,6 @@ const uint8_t ram [] = {
 
 Context context;
 
-static int getch (void) { int v = -1; read(0, &v, 1); return v; }
-static void putch (char c) { write(1, &c, 1); }
-
 void systemCall (Context *ctx, int req, uint16_t pc) {
     Z80_STATE* state = &ctx->state;
 
@@ -32,17 +29,24 @@ void systemCall (Context *ctx, int req, uint16_t pc) {
             break;
         }
 
-        case 1: // wait for input, return in A
-            A = getch();
+        case 1: { // wait for input, return in A
+            // TODO should be a read which suspends until there is data
+            // this polls for now, and has a race condition with two readers
+            int n = 0;
+            do
+                ioctl(0, /*FIONREAD*/ 0, &n);
+            while (n == 0);
+            read(0, &n, 1);
+            A = n;
             break;
+        }
 
         case 2: // output the character in E
-            putch((uint8_t) DE);
+            write(1, &DE, 1); // ignores D
             break;
 
         case 3: // output the string in DE until null byte
-            for (int i = DE; CCMEM[i] != 0; ++i)
-                putch(CCMEM[i]);
+            write(1, CCMEM + DE, strlen((char*) CCMEM + DE));
             break;
 
         case 4: { // r/w diskio
@@ -56,16 +60,12 @@ void systemCall (Context *ctx, int req, uint16_t pc) {
             break;
 
         default:
-            //printf("Z: sysreq %d @ %04x ?\n", req, pc);
             write(2, "\n*** sysreq? ***\n", 17);
             while (1) {}
     }
 }
 
 int main() {
-    for (int i = 0; i < 10000000; ++i) asm ("");
-    putch('?'); // FIXME first call lost?
-
     // emulated rom bootstrap, loads first disk sector to 0x0000
     diskio(0, 0, CCMEM, 1);
 

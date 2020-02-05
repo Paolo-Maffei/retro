@@ -346,7 +346,7 @@ int main () {
                 _edata[], _sbss[], _ebss[], _estack[];
     uint32_t dataSz = _edata - _sdata, bssSz = _ebss - _sbss;
     uint32_t textSz = (_sidata - _stext) + dataSz; // incl data init
-    printf("\ntext %08x/%db data %08x/%db bss %04x/%db heap %04x/%db\n",
+    printf("\ntext %08x,%db data %08x,%db bss %04x,%db heap %04x,%db\n",
         _stext, textSz, _sdata, dataSz,
         (uint16_t) (int) _sbss, bssSz, (uint16_t) (int) _ebss, _estack - _ebss);
 
@@ -514,11 +514,13 @@ void systemTask () {
         yield = false;
     };
 
+#if 0
     // set up task 1, using the stack and entry point found in flash memory
     Task::vec[1].init((void*) MMIO32(0x08004000),
                       (void (*)()) MMIO32(0x08004004));
+#endif
 
-#if 1
+#if 0
 #include "test_tasks.h"
 #else
     // set up task 8, also in flash memory, for some additional experiments
@@ -550,7 +552,7 @@ void systemTask () {
             if (isCall) {
                 //printf("S: rerouting req #%d from %d to %d\n",
                 //        req, src, sr.task);
-                sysMsg.req = sr.num; // adjust the request before forwarding
+                sysMsg.req = sr.num; // adjust request code before forwarding
                 bool f = Task::vec[sr.task].forward(sender, &sysMsg);
                 if (!f)
                     printf("S: forward failed, req #%d from %d to %d\n",
@@ -567,22 +569,23 @@ void systemTask () {
 #endif
         // non-forwarded requests are handled by the system task
         switch (req) {
-            case 0: // noop
+            case 0:
+            case SYSCALL_noop:
                 break;
 
-            case 1: { // demo
+            case SYSCALL_demo: {
                 printf("\t<demo %d %d %d %d>\n",
                         args[0], args[1], args[2], args[3]);
                 reply = args[0] + args[1] + args[2] + args[3];
                 break;
             }
 
-            case 2: // exit
+            case SYSCALL_exit_:
                 printf("%d S: exit requested by %d\n", ticks, src);
                 isCall = false; // TODO waits forever, must clean up
                 break;
 
-            case 3: { // write
+            case SYSCALL_write: {
                 int /*fd = args[0],*/ len = args[2];
                 uint8_t const* ptr = (uint8_t const*) args[1];
                 for (int i = 0; i < len; ++i)
@@ -591,7 +594,7 @@ void systemTask () {
                 break;
             }
 
-            case 4: { // read
+            case SYSCALL_read: {
                 int /*fd = args[0],*/ len = args[2];
                 uint8_t* ptr = (uint8_t*) args[1];
                 for (int i = 0; i < len; ++i)
@@ -600,7 +603,7 @@ void systemTask () {
                 break;
             }
 
-            case 5: { // ioctl, assumes FIONREAD on stdin for now
+            case SYSCALL_ioctl: { // assumes FIONREAD on stdin for now
                 //int fd = args[0], req = args[2];
                 int* ptr = (int*) args[2];
                 *ptr = console.readable();
@@ -608,7 +611,7 @@ void systemTask () {
                 break;
             }
 
-            case 6: { // diskio
+            case SYSCALL_diskio: {
                 uint32_t /*dev = args[0],*/ pos = args[1], cnt = args[3];
                 uint8_t* ptr = (uint8_t*) args[2];
                 bool wflag = pos >> 31;
@@ -628,7 +631,8 @@ void systemTask () {
             }
 
             default:
-                printf("%d S: sysroute (0,#%d) ?\n", ticks, req);
+                printf("%d S: %s (0,#%d) ?\n",
+                        ticks, isCall ? "CALL" : "SEND", req);
         }
 
         // unblock the originating task if it's waiting
