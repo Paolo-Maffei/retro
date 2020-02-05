@@ -518,7 +518,7 @@ void systemTask () {
     Task::vec[1].init((void*) MMIO32(0x08004000),
                       (void (*)()) MMIO32(0x08004004));
 
-#if 0
+#if 1
 #include "test_tasks.h"
 #else
     // set up task 8, also in flash memory, for some additional experiments
@@ -526,15 +526,8 @@ void systemTask () {
                       (void (*)()) MMIO32(0x08008004));
 #endif
 
-    // these requests are handled by this system task
-    routes[SYSCALL_noop].set(0, 0); // same as all the default entries
-    routes[SYSCALL_demo].set(0, 1);
-    routes[SYSCALL_exit_].set(0, 2);
-    routes[SYSCALL_gpio].set(7, 0); // reroute to gpio task
-    routes[SYSCALL_write].set(0, 3);
-    routes[SYSCALL_read].set(0, 4);
-    routes[SYSCALL_ioctl].set(0, 5);
-    routes[SYSCALL_diskio].set(0, 6);
+    // these requests are forwarded to other tasks
+    routes[SYSCALL_gpio].set(7, 0);
 
     while (true) {
         Message sysMsg;
@@ -568,12 +561,12 @@ void systemTask () {
             continue;
         }
 #if 0
-        if (sr.num != 3 && req != 9)
+        if (req != 3 && req != 9)
             printf("%d S: ipc %s req #%d from %d\n",
                     ticks, isCall ? "CALL" : "SEND", req, src);
 #endif
-        // request needs to be handled by the system task, i.e. here
-        switch (sr.num) {
+        // non-forwarded requests are handled by the system task
+        switch (req) {
             case 0: // noop
                 break;
 
@@ -635,7 +628,7 @@ void systemTask () {
             }
 
             default:
-                printf("%d S: sysroute (%d#%d) ?\n", ticks, sr.task, sr.num);
+                printf("%d S: sysroute (0,#%d) ?\n", ticks, req);
         }
 
         // unblock the originating task if it's waiting
