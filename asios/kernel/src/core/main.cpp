@@ -514,7 +514,7 @@ void systemTask () {
         yield = false;
     };
 
-#if 0
+#if 1
     // set up task 1, using the stack and entry point found in flash memory
     Task::vec[1].init((void*) MMIO32(0x08004000),
                       (void (*)()) MMIO32(0x08004004));

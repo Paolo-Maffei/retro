@@ -66,6 +66,8 @@ void systemCall (Context *ctx, int req, uint16_t pc) {
 }
 
 int main() {
+    demo(11,22,33,44);
+
     // emulated rom bootstrap, loads first disk sector to 0x0000
     diskio(0, 0, CCMEM, 1);
 

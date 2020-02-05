@@ -1,13 +1,6 @@
 #include "syslib.h"
 
 int main () {
-    gpio(0, 0xA7); // FIXME first syscall gets lost?
-    gpio(0, 0xA7); // PinA<7>::mode(Pinmode::out)
-
-    while (1) {
-        gpio(1, 0xA7); // PinA<7>::clear()
-        for (int i = 0; i < 10000000; ++i) asm ("");
-        gpio(2, 0xA7); // PinA<7>::set()
-        for (int i = 0; i < 10000000; ++i) asm ("");
-    }
+    demo(22,33,44,55);
+    exit_(0);
 }
