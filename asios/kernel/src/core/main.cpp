@@ -346,8 +346,9 @@ int main () {
                 _edata[], _sbss[], _ebss[], _estack[];
     uint32_t dataSz = _edata - _sdata, bssSz = _ebss - _sbss;
     uint32_t textSz = (_sidata - _stext) + dataSz; // incl data init
-    printf("text %08x %db data %08x %db bss %08x %db brk..msp %db\n",
-            _stext, textSz, _sdata, dataSz, _sbss, bssSz, _estack - _ebss);
+    printf("\ntext %08x/%db data %08x/%db bss %04x/%db heap %04x/%db\n",
+        _stext, textSz, _sdata, dataSz,
+        (uint16_t) (int) _sbss, bssSz, (uint16_t) (int) _ebss, _estack - _ebss);
 
     irqVec = &VTableRam(); // this call can't be used in thread mode XXX yuck
 
