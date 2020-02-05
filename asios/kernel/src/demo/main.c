@@ -41,8 +41,8 @@ void systemCall (Context *ctx, int req, uint16_t pc) {
             break;
         }
 
-        case 2: // output the character in E
-            write(1, &DE, 1); // ignores D
+        case 2: // output the character in C
+            write(1, &C, 1);
             break;
 
         case 3: // output the string in DE until null byte
@@ -50,14 +50,13 @@ void systemCall (Context *ctx, int req, uint16_t pc) {
             break;
 
         case 4: { // r/w diskio
-                int out = (B & 0x80) != 0;
-                uint8_t sec = DE, trk = DE >> 8, dsk = A, cnt = B & 0x7F;
-                uint32_t pos = 26*trk + sec;  // no skewing
-
-                diskio(dsk, pos | (out ? 1<<31 : 0), CCMEM + HL, cnt);
-            }
+            int out = (B & 0x80) != 0;
+            uint8_t sec = DE, trk = DE >> 8, dsk = A, cnt = B & 0x7F;
+            uint32_t pos = 26*trk + sec;  // no skewing
+            diskio(dsk, pos | (out ? 1<<31 : 0), CCMEM + HL, cnt);
             A = 0;
             break;
+        }
 
         default:
             write(2, "\n*** sysreq? ***\n", 17);
