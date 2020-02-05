@@ -23,7 +23,7 @@ static void putch (char c) { write(1, &c, 1); }
 void systemCall (Context *ctx, int req, uint16_t pc) {
     Z80_STATE* state = &ctx->state;
 
-    switch (state->registers.byte[Z80_C]) {
+    switch (req) {
 
         case 0: { // return true if there's input
             int n = 0;
@@ -53,11 +53,6 @@ void systemCall (Context *ctx, int req, uint16_t pc) {
                 diskio(dsk, pos | (out ? 1<<31 : 0), CCMEM + HL, cnt);
             }
             A = 0;
-            break;
-
-        case 9: // output the string in DE until '$' terminator
-            for (int i = DE; CCMEM[i] != '$'; ++i)
-                putch(CCMEM[i]);
             break;
 
         default:

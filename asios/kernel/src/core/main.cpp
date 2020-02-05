@@ -566,7 +566,7 @@ void systemTask () {
                         req, src, sr.task);
             continue;
         }
-#if 1
+#if 0
         if (sr.num != 3 && req != 9)
             printf("%d S: ipc %s req #%d from %d\n",
                     ticks, isCall ? "CALL" : "SEND", req, src);
@@ -619,7 +619,9 @@ void systemTask () {
                 uint8_t* ptr = (uint8_t*) args[2];
                 bool wflag = pos >> 31;
                 pos &= 0x7FFFFFFF;
+#if 0
                 printf("diskio w %d p %d @ %08x c %d\n", wflag, pos, ptr, cnt);
+#endif
                 for (uint32_t i = 0; i < cnt; ++i) {
                     if (wflag)
                         disk.writeSector(pos + i, ptr);
