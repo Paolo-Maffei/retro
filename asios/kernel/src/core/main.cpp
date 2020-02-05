@@ -208,10 +208,6 @@ public:
         mpuMaps = (uint32_t*) dummyMaps;
     }
 
-    static void run () {
-        startTasks(vec); // never returns
-    }
-
     static Task& current () { return *(Task*) currTask; }
 
     static Task* nextRunnable () {
@@ -358,37 +354,16 @@ int main () {
 
     disk.init(); // TODO flashwear disk shouldn't be here
 
-    Task::run(); // the big leap into unprivileged thread mode, never returns
+    startTasks(Task::vec); // leap into unprivileged thread mode, never returns
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // System call handlers and dispatch vector. These always run in SVC context.
+// The kernel code above needs to know almost nothing about everything below.
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 extern "C" {
 #include <syslib.h>
-}
-
-// non-blocking message send, behaves as atomic test-and-set
-static void do_ipcSend (HardwareStackFrame* sfp) {
-    int dst = sfp->r[0];
-    Message* msg = (Message*) sfp->r[1];
-    // ... validate dst and msg
-    sfp->r[0] = Task::vec[dst].deliver(Task::current(), msg);
-}
-
-// blocking send + receive, used for request/reply sequences
-static void do_ipcCall (HardwareStackFrame* sfp) {
-    int dst = sfp->r[0];
-    Message* msg = (Message*) sfp->r[1];
-    // ... validate dst and msg
-    sfp->r[0] = Task::vec[dst].replyTo(msg);
-}
-
-// blocking receive, used by drivers and servers
-static void do_ipcRecv (HardwareStackFrame* sfp) {
-    Message* msg = (Message*) sfp->r[0];
-    // ... validate msg
-    sfp->r[0] = Task::current().listen(msg);
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -400,44 +375,68 @@ static void do_ipcRecv (HardwareStackFrame* sfp) {
 // This is ok, as context switches only happen in PendSV, i.e. outside SVCs.
 
 void SVC_Handler () {
-    HardwareStackFrame* psp;
-    asm volatile ("mrs %0, psp" : "=r" (psp));
-    uint8_t req = ((uint8_t*) (psp->pc))[-2];
+    HardwareStackFrame* sfp;
+    asm volatile ("mrs %0, psp" : "=r" (sfp));
+    uint8_t req = ((uint8_t*) (sfp->pc))[-2];
 #if 0
     printf("< svc.%d psp %08x r0.%d lr %08x pc %08x psr %08x >\n",
-            req, psp, psp->r[0], psp->lr, psp->pc, psp->psr);
+            req, sfp, sfp->r[0], sfp->lr, sfp->pc, sfp->psr);
 #endif
     // first of all, make *currTask "resemble" a stack with full context
     // this is fiction, since R4-R11 (and FP regs) have *not* been saved
     // note that *currTask is not authoritative, h/w uses the real psp
     // now all valid task entries have similar stack ptrs for kernel use
-    *currTask = (uint32_t*) psp - PSP_EXTRA;
+    *currTask = (uint32_t*) sfp - PSP_EXTRA;
 
     // fully-automated task categorisation: the first SVC request made by a
     // task will configure its type, and therefore its system permissions
     Task& t = Task::current();
     if (t.type == Task::Early)
         switch (req) {
-            case SYSCALL_ipcSend: break; // no change
+            case SYSCALL_ipcSend:                        break; // no change
             case SYSCALL_ipcCall: t.type = Task::Driver; break;
             case SYSCALL_ipcRecv: t.type = Task::Server; break;
-            default: t.type = Task::App; break;
+            default:              t.type = Task::App;    break;
         }
 
     // there's no need to enforce these permissions right now, that can be
     // done in the ipc calls and in task #0, which handles all other calls
 
     switch (req) {
-        case SYSCALL_ipcSend: do_ipcSend(psp); break;
-        case SYSCALL_ipcCall: do_ipcCall(psp); break;
-        case SYSCALL_ipcRecv: do_ipcRecv(psp); break;
-        //case SYSCALL_ipcPass: do_ipcPass(psp); break;
+        // non-blocking message send, behaves as atomic test-and-set
+        case SYSCALL_ipcSend: {
+            int dst = sfp->r[0];
+            Message* msg = (Message*) sfp->r[1];
+            // ... validate dst and msg
+            sfp->r[0] = Task::vec[dst].deliver(Task::current(), msg);
+            break;
+        }
 
-        default: { // wrap into an ipcCall to task #0
+        // blocking send + receive, used for request/reply sequences
+        case SYSCALL_ipcCall: {
+            int dst = sfp->r[0];
+            Message* msg = (Message*) sfp->r[1];
+            // ... validate dst and msg
+            sfp->r[0] = Task::vec[dst].replyTo(msg);
+            break;
+        }
+
+        // blocking receive, used by drivers and servers
+        case SYSCALL_ipcRecv: {
+            Message* msg = (Message*) sfp->r[0];
+            // ... validate msg
+            sfp->r[0] = Task::current().listen(msg);
+            break;
+        }
+
+        //case SYSCALL_ipcPass: do_ipcPass(sfp); break;
+
+        // wrap everything else into an ipcCall to task #0
+        default: {
             // msg can be on the stack, because task #0 always accepts 'em now
             Message sysMsg;
             sysMsg.req = req;
-            sysMsg.args = psp->r;
+            sysMsg.args = sfp->r;
             (void) Task::vec[0].replyTo(&sysMsg); // XXX explain void
         }
     }
@@ -514,12 +513,9 @@ void systemTask () {
         yield = false;
     };
 
-#if 1
     // set up task 1, using the stack and entry point found in flash memory
     Task::vec[1].init((void*) MMIO32(0x08004000),
                       (void (*)()) MMIO32(0x08004004));
-#endif
-
 #if 0
 #include "test_tasks.h"
 #else
@@ -567,7 +563,7 @@ void systemTask () {
             printf("%d S: ipc %s req #%d from %d\n",
                     ticks, isCall ? "CALL" : "SEND", req, src);
 #endif
-        // non-forwarded requests are handled by the system task
+        // non-forwarded requests are handled by this system task
         switch (req) {
             case 0:
             case SYSCALL_noop:
@@ -616,9 +612,7 @@ void systemTask () {
                 uint8_t* ptr = (uint8_t*) args[2];
                 bool wflag = pos >> 31;
                 pos &= 0x7FFFFFFF;
-#if 0
-                printf("diskio w %d p %d @ %08x c %d\n", wflag, pos, ptr, cnt);
-#endif
+                //printf("diskio w %d p %d @%08x c %d\n", wflag, pos, ptr, cnt);
                 for (uint32_t i = 0; i < cnt; ++i) {
                     if (wflag)
                         disk.writeSector(pos + i, ptr);
