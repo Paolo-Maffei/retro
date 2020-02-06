@@ -329,7 +329,7 @@ void Task::dump () {
 // Note that main knows nothing about system calls, MPU, SVC, or IRQ handlers.
 
 extern void systemTask ();
-static VTable* irqVec; // without static it crashes FIXME stray mem corruption?
+static VTable* irqVec; // without static it crashes FIXME alignment ???
 
 int main () {
     console.init();
@@ -337,22 +337,22 @@ int main () {
     setupFaultHandlers();
     wait_ms(200); // give platformio's console time to connect
 
+    extern uint8_t _estack[];
+    uint8_t* systemStack = _estack - 1024; // leave 1k for the MSP stack
+
     // display some memory usage info for the kernel + system task
-    extern char _stext[], _sidata[], _sdata[],
-                _edata[], _sbss[], _ebss[], _estack[];
+    extern uint8_t _stext[], _sidata[], _sdata[], _edata[], _sbss[], _ebss[];
     uint32_t dataSz = _edata - _sdata, bssSz = _ebss - _sbss;
     uint32_t textSz = (_sidata - _stext) + dataSz; // incl data init
-    printf("\ntext %08x,%db data %08x,%db bss %04x,%db heap %04x,%db\n",
+    printf("\ntext %08x,%db data %08x,%db bss %04x,%db stack %04x,%db\n",
         _stext, textSz, _sdata, dataSz,
-        (uint16_t) (int) _sbss, bssSz, (uint16_t) (int) _ebss, _estack - _ebss);
+        (uint16_t) (int) _sbss, bssSz, (uint16_t) (int) _ebss,
+        systemStack - _ebss);
 
     irqVec = &VTableRam(); // this call can't be used in thread mode XXX yuck
 
-    // set up the stack and initialize the very first task
-    alignas(8) static uint8_t stack_0 [256];
-    Task::vec[0].init(stack_0 + sizeof stack_0, systemTask);
-
-    disk.init(); // TODO flashwear disk shouldn't be here
+    // initialize the very first task
+    Task::vec[0].init(systemStack, systemTask);
 
     startTasks(Task::vec); // leap into unprivileged thread mode, never returns
 }
@@ -512,6 +512,8 @@ void systemTask () {
                 changeTask(Task::nextRunnable());
         yield = false;
     };
+
+    disk.init(); // TODO flashwear disk shouldn't be here
 
     // set up task 1, using the stack and entry point found in flash memory
     Task::vec[1].init((void*) MMIO32(0x08004000),
