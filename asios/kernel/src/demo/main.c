@@ -50,10 +50,9 @@ void systemCall (Context *ctx, int req, uint16_t pc) {
             break;
 
         case 4: { // r/w diskio
-            int out = (B & 0x80) != 0;
-            uint8_t sec = DE, trk = DE >> 8, dsk = A, cnt = B & 0x7F;
+            uint8_t sec = DE, trk = DE>>8, dsk = A | (B&0x80), cnt = B&0x7F;
             uint32_t pos = 26*trk + sec;  // no skewing
-            diskio(dsk, pos | (out ? 1<<31 : 0), CCMEM + HL, cnt);
+            diskio(dsk, pos, CCMEM + HL, cnt);
             A = 0;
             break;
         }
@@ -65,7 +64,7 @@ void systemCall (Context *ctx, int req, uint16_t pc) {
 }
 
 int main() {
-    demo(11,22,33,44);
+    demo(44,33,22,11);
 
     // emulated rom bootstrap, loads first disk sector to 0x0000
     diskio(0, 0, CCMEM, 1);

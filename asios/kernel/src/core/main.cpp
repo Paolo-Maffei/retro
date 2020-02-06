@@ -570,7 +570,11 @@ void systemTask () {
 #endif
         // non-forwarded requests are handled by this system task
         switch (req) {
-            case 0:
+            default:
+                printf("%d S: %s (0,#%d) ?\n",
+                        ticks, isCall ? "CALL" : "SEND", req);
+                break;
+
             case SYSCALL_noop:
                 break;
 
@@ -613,13 +617,10 @@ void systemTask () {
             }
 
             case SYSCALL_diskio: {
-                uint32_t /*dev = args[0],*/ pos = args[1], cnt = args[3];
+                uint32_t dev = args[0], pos = args[1], cnt = args[3];
                 uint8_t* ptr = (uint8_t*) args[2];
-                bool wflag = pos >> 31;
-                pos &= 0x7FFFFFFF;
-                //printf("diskio w %d p %d @%08x c %d\n", wflag, pos, ptr, cnt);
                 for (uint32_t i = 0; i < cnt; ++i) {
-                    if (wflag)
+                    if (dev & 0x80)
                         disk.writeSector(pos + i, ptr);
                     else
                         disk.readSector(pos + i, ptr);
@@ -628,10 +629,6 @@ void systemTask () {
                 reply = 0;
                 break;
             }
-
-            default:
-                printf("%d S: %s (0,#%d) ?\n",
-                        ticks, isCall ? "CALL" : "SEND", req);
         }
 
         // unblock the originating task if it's waiting
