@@ -69,8 +69,11 @@ struct HardwareStackFrame {
     uint32_t r[4], r12, lr, pc, psr;
 };
 
-// XXX asm below assumes nextTask is placed just after currTask in memory
-uint32_t **currTask, **nextTask; // ptrs for saved PSPs of current & next tasks
+// use a struct to force these two variables next to each other in memory
+struct {
+    uint32_t** curr; // current task pointer, MUST be first
+    uint32_t** next; // next task to schedule, MUST be second
+} pspSw;
 
 // context switcher, includes updating MPU maps, no floating point support
 // this does not need to know about tasks, just pointers to its first 2 fields
@@ -80,12 +83,12 @@ void PendSV_Handler () {
         // save current context \n\
         mrs    r0, psp      // get current process stack pointer value \n\
         stmdb  r0!,{r4-r11} // push R4 to R11 to task stack (8 regs) \n\
-        ldr    r1,=currTask \n\
+        ldr    r1,=pspSw \n\
         ldr    r2,[r1]      // get current task ptr \n\
         str    r0,[r2]      // save PSP value into current task \n\
         // load next context \n\
         ldr    r4,[r1,#4]   // get next task ptr \n\
-        str    r4,[r1]      // set currTask = nextTask \n\
+        str    r4,[r1]      // set pspSw.curr = pspSw.next \n\
         ldr    r0,[r4]      // load PSP value from next task \n\
         ldr    r1,[r4,#4]   // load pointer to MPU regions \n\
         ldm    r1,{r2-r5}   // load R2 to R5 for 2 MPU regions (4 regs) \n\
@@ -98,11 +101,11 @@ void PendSV_Handler () {
 }
 
 void startTasks (void* firstTask) {
-    currTask = nextTask = (uint32_t**) firstTask;
+    pspSw.curr = pspSw.next = (uint32_t**) firstTask;
 
     // prepare to run all tasks in unprivileged thread mode, with one PSP
     // stack per task, keeping the original main stack for MSP/handler use
-    HardwareStackFrame* psp = (HardwareStackFrame*) (*currTask + PSP_EXTRA);
+    HardwareStackFrame* psp = (HardwareStackFrame*) (*pspSw.curr + PSP_EXTRA);
     asm volatile ("msr psp, %0\n" :: "r" (psp + 1));
 
     // PendSV will be used to switch stacks, at the lowest interrupt priority
@@ -122,8 +125,8 @@ void startTasks (void* firstTask) {
 
 void changeTask (void* next) {
     // trigger a PendSV when back in thread mode to switch tasks
-    nextTask = (uint32_t**) next;
-    if (nextTask != currTask)
+    pspSw.next = (uint32_t**) next;
+    if (pspSw.next != pspSw.curr)
         MMIO32(0xE000ED04) |= 1<<28; // SCB->ICSR |= PENDSVSET
 }
 
@@ -208,7 +211,7 @@ public:
         mpuMaps = (uint32_t*) dummyMaps;
     }
 
-    static Task& current () { return *(Task*) currTask; }
+    static Task& current () { return *(Task*) pspSw.curr; }
 
     static Task* nextRunnable () {
         Task* tp = &current();
@@ -290,11 +293,11 @@ private:
     }
 
     int suspend (Task* reason) {
-        if (currTask != &pspSaved) // could be supported, but no need so far
-            printf(">>> SUSPEND? %08x != curr %08x\n", this, currTask);
+        if (pspSw.curr != &pspSaved) // could be supported, but no need so far
+            printf(">>> SUSPEND? %08x != curr %08x\n", this, pspSw.curr);
 
         void* next = nextRunnable();
-        if (next == currTask)
+        if (next == pspSw.curr)
             panic("no runnable tasks left");
         changeTask(next); // will trigger PendSV tail-chaining
 
@@ -329,7 +332,7 @@ void Task::dump () {
 // Note that main knows nothing about system calls, MPU, SVC, or IRQ handlers.
 
 extern void systemTask ();
-static VTable* irqVec; // without static it crashes FIXME alignment ???
+VTable* irqVec;
 
 int main () {
     console.init();
@@ -382,11 +385,11 @@ void SVC_Handler () {
     printf("< svc.%d psp %08x r0.%d lr %08x pc %08x psr %08x >\n",
             req, sfp, sfp->r[0], sfp->lr, sfp->pc, sfp->psr);
 #endif
-    // first of all, make *currTask "resemble" a stack with full context
+    // first of all, make *pspSw.curr "resemble" a stack with full context
     // this is fiction, since R4-R11 (and FP regs) have *not* been saved
-    // note that *currTask is not authoritative, h/w uses the real psp
+    // note that *pspSw.curr is not authoritative, h/w uses the real psp
     // now all valid task entries have similar stack ptrs for kernel use
-    *currTask = (uint32_t*) sfp - PSP_EXTRA;
+    *pspSw.curr = (uint32_t*) sfp - PSP_EXTRA;
 
     // fully-automated task categorisation: the first SVC request made by a
     // task will configure its type, and therefore its system permissions
