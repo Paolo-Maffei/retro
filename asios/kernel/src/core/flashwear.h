@@ -17,7 +17,7 @@ class FlashWear {
 
     typedef uint8_t Segment [SEC_PER_SEG][SECLEN];
 
-    static ModPage const& mods;  // used to collect all changes
+    static ModPage const* mods;  // used to collect all changes
     static Segment const* segs;  // actual data storage segments
     static uint16_t fill;        // next unused entry in map
 
@@ -36,8 +36,8 @@ class FlashWear {
             memset(useBits, 0, sizeof useBits);
 
             for (int i = 0; i < fill; ++i)
-                if (mods.map[i] / SEC_PER_SEG == seg) {
-                    int n = mods.map[i] % SEC_PER_SEG;
+                if (mods->map[i] / SEC_PER_SEG == seg) {
+                    int n = mods->map[i] % SEC_PER_SEG;
                     if ((useBits[n/8] & (1<<(n%8))) == 0) {
                         useBits[n/8] |= 1<<(n%8);
                         ++counts[seg];
@@ -47,7 +47,7 @@ class FlashWear {
 
         // start re-flashing segments, until only a few changes remain
         uint8_t newPhys [SEGSUSED];
-        memcpy(newPhys, mods.phys, sizeof newPhys);
+        memcpy(newPhys, mods->phys, sizeof newPhys);
 
         for (;;) {
             if (DEBUG) {
@@ -76,7 +76,7 @@ class FlashWear {
                 // changes have been merged back, now clean up the mods page
                 Flash::erasePage(&mods);
                 for (int i = 0; i < SEGSUSED; ++i)
-                    Flash::write8(mods.phys + i, newPhys[i]);
+                    Flash::write8(mods->phys + i, newPhys[i]);
                 fill = remain; // TODO will always be zero for now
                 return;
             }
@@ -109,9 +109,15 @@ class FlashWear {
     }
 
 public:
+    // use a constructor to avoid initialised data, for better bss alignment
+    FlashWear () {
+        mods = (ModPage const*) 0x00010000;  // @ 64K
+        segs = (Segment const*) 0x00020000;  // @ 128K
+    }
+
     static bool valid () {
         for (int i = 0; i < SEGSUSED; ++i)
-            if (mods.phys[0] <= 0 || mods.phys[0] > SEGSUSED+1)
+            if (mods->phys[0] <= 0 || mods->phys[0] > SEGSUSED+1)
                 return false;
         return true;
     }
@@ -124,15 +130,15 @@ public:
             printf("initialising internal flash\n");
             Flash::erasePage(&mods);
             for (int i = 0; i < SEGSUSED; ++i)
-                Flash::write8(mods.phys + i, i+2);
+                Flash::write8(mods->phys + i, i+2);
         }
-        for (fill = NUM_MODS; mods.map[fill-1] == 0xFFFF; --fill)
+        for (fill = NUM_MODS; mods->map[fill-1] == 0xFFFF; --fill)
             if (fill == 0)
                 break;
         if (DEBUG) {
             printf("fill %d, phys:", fill);
             for (int i = 0; i < SEGSUSED; ++i)
-                printf(" %d", mods.phys[i]);
+                printf(" %d", mods->phys[i]);
             printf("\n");
         }
         uint32_t memSizeKb = MMIO16(0x1FFF7A22); // TODO F407-specific?
@@ -141,14 +147,14 @@ public:
 
     static void readSector (int pos, void* buf) {
         for (int i = fill; --i >= 0; )
-            if (mods.map[i] == pos) {
+            if (mods->map[i] == pos) {
                 if (DEBUG)
                     printf("readSector %d mod %d\n", pos, i);
-                memcpy(buf, mods.sectors[i], SECLEN);
+                memcpy(buf, mods->sectors[i], SECLEN);
                 return; // return modified sector
             }
         // no changed version found, return the original sector
-        int segPhys = mods.phys[pos/SEC_PER_SEG];
+        int segPhys = mods->phys[pos/SEC_PER_SEG];
         if (DEBUG)
             printf("readSector %d seg %d @ %d\n",
                     pos, segPhys, pos % SEC_PER_SEG);
@@ -161,13 +167,11 @@ public:
         int n = fill++;
         if (DEBUG)
             printf("writeSector %d mod %d\n", pos, n);
-        Flash::write16(mods.map + n, pos);
-        Flash::write32buf(mods.sectors[n], (uint32_t const*) buf, SECLEN/4);
+        Flash::write16(mods->map + n, pos);
+        Flash::write32buf(mods->sectors[n], (uint32_t const*) buf, SECLEN/4);
     }
 };
 
-FlashWear::ModPage const& FlashWear::mods =
-    *(FlashWear::ModPage const*) 0x00010000;  // @ 64K
-FlashWear::Segment const* FlashWear::segs =
-    (FlashWear::Segment const*) 0x00020000;  // @ 128K
-uint16_t FlashWear::fill = 0;
+FlashWear::ModPage const* FlashWear::mods;
+FlashWear::Segment const* FlashWear::segs;
+uint16_t FlashWear::fill;
