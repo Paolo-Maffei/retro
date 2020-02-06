@@ -293,10 +293,10 @@ private:
         if (currTask != &pspSaved) // could be supported, but no need so far
             printf(">>> SUSPEND? %08x != curr %08x\n", this, currTask);
 
-        void* nextTask = nextRunnable();
-        if (nextTask == currTask)
+        void* next = nextRunnable();
+        if (next == currTask)
             panic("no runnable tasks left");
-        changeTask(nextTask); // will trigger PendSV tail-chaining
+        changeTask(next); // will trigger PendSV tail-chaining
 
         blocking = reason;
         return -1; // suspended, this result will be adjusted in resume()
