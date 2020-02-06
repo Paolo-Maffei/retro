@@ -331,8 +331,8 @@ void Task::dump () {
 // Main entry point: set up the system task (task #0) and start multi-tasking.
 // Note that main knows nothing about system calls, MPU, SVC, or IRQ handlers.
 
-extern void systemTask ();
-VTable* irqVec;
+void systemTask (); // forward declaration
+VTable* irqVec;     // see below TODO this can be fixed in JeeH
 
 int main () {
     console.init();
@@ -352,7 +352,7 @@ int main () {
         (uint16_t) (int) _sbss, bssSz, (uint16_t) (int) _ebss,
         systemStack - _ebss);
 
-    irqVec = &VTableRam(); // this call can't be used in thread mode XXX yuck
+    irqVec = &VTableRam(); // this call can't be used in thread mode
 
     // initialize the very first task
     Task::vec[0].init(systemStack, systemTask);
