@@ -347,10 +347,12 @@ int main () {
     extern uint8_t _stext[], _sidata[], _sdata[], _edata[], _sbss[], _ebss[];
     uint32_t dataSz = _edata - _sdata, bssSz = _ebss - _sbss;
     uint32_t textSz = (_sidata - _stext) + dataSz; // incl data init
-    printf("\ntext %08x,%db data %08x,%db bss %04x,%db stack %04x,%db\n",
-        _stext, textSz, _sdata, dataSz,
+    printf("\n"
+        "text %08x,%db data %04x,%db bss %04x,%db free %04x,%db stack %08x\n",
+        _stext, textSz, (uint16_t) (int) _sdata, dataSz,
         (uint16_t) (int) _sbss, bssSz, (uint16_t) (int) _ebss,
-        systemStack - _ebss);
+        systemStack - _ebss, systemStack);
+//text 08000010,4732b data E000,0b bss E000,2992b free EBB0,4176b stack 2001FC00
 
     irqVec = &VTableRam(); // this call can't be used in thread mode
 
