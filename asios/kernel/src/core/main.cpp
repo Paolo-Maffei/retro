@@ -490,7 +490,7 @@ void systemTask (void* arg) {
     // set up task 1, using the stack and entry point found in flash memory
     uint32_t* task1 = (uint32_t*) arg;
     Task::vec[1].init((void*) task1[0], (void (*)(void*)) task1[1], 0);
-#if 1
+#if 0
 #include "test_tasks.h"
 #else
     // set up task 8, also in flash memory, for some additional experiments

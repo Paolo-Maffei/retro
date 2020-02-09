@@ -101,7 +101,7 @@ now active:
 ![](img/mem-after.svg)
 
 Note that the other task's "saved PSP" can no longer be held in the PSP
-register, it has to be saved somewhere in RAM. The kernel maintains is a little
+register, it has to be saved somewhere in RAM. The kernel maintains a little
 area for each task, to store the PSP and a few other task-specific details.
 
 With ARM Cortex-M, context switching is done through a special "PendSV"
@@ -129,7 +129,7 @@ handler or inside another system call will generate a "hard fault" and lead to
 abrupt system termination (with a "panic message" to explain what happened).
 
 This means that the saved registers on a task stack are either the result of a
-system call (now in progress), or a -- presumably brief -- interruption of the
+system call (now in progress), or a – presumably brief – interruption of the
 current task, to be resumed soon. System calls can never appear on the master
 stack.
 
