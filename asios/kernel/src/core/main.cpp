@@ -184,7 +184,7 @@ public:
 
     enum { Early, App, Server, Driver }; // type of task
     uint8_t type :2;    // set once the first SVC call is made
-    uint8_t request;    // non-zero when a system call is in progress
+    uint8_t request;    // request number for last system call
 
     uint8_t spare[2];   // pad the total task size to 32 bytes
 
@@ -280,9 +280,9 @@ public:
         if (pspSaved) {
             printf("  [%03x] %2d: %c%c sp %08x", (uint32_t) this & 0xFFF,
                     this - vec, " *<~"[type], "USWRA"[state()], pspSaved);
-            printf(" blkg %2d pend %08x fini %08x mbuf %08x\n",
+            printf(" blkg %2d pend %08x fini %08x mbuf %08x req %d\n",
                     blocking == 0 ? -1 : blocking->index(),
-                    pendingQueue, finishQueue, message);
+                    pendingQueue, finishQueue, message, request);
         }
     }
 
@@ -399,12 +399,12 @@ void SVC_Handler () {
 
         //case SYSCALL_ipcPass: do_ipcPass(sfp); break;
 
-        // wrap everything else into an ipcCall to task #0
+        // wrap everything else into a message-less ipcCall to task #0
         default: {
-            // msg can be on the stack, because task #0 always accepts 'em now
-            Message sysMsg;
+// msg can be on the stack, because task #0 always accepts 'em now
+Message sysMsg;
             Task::current().request = req;
-            (void) Task::vec[0].replyTo(&sysMsg); // XXX explain void
+            (void) Task::vec[0].replyTo(&sysMsg); // no message buf XXX explain void
         }
     }
 }

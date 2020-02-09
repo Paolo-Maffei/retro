@@ -58,13 +58,14 @@ void systemCall (Context *ctx, int req, uint16_t pc) {
         }
 
         default:
-            write(2, "\n*** sysreq? ***\n", 17);
+            write(1, "\n*** sysreq? ***\n", 17);
             while (1) {}
     }
 }
 
 int main() {
-    demo(44,33,22,11);
+    if (demo(44,33,22,11) != 44 + 33 + 22 + 11)
+        write(1, "demo?\n", 6);
 
     // emulated rom bootstrap, loads first disk sector to 0x0000
     diskio(0, 0, CCMEM, 1);
