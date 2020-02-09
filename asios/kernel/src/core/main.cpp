@@ -224,8 +224,8 @@ public:
 
     // try to deliver a message to this task
     int deliver (Task& sender, Message* msg) {
-printf("S: deliver %08x %d => %d req %d\n",
-    msg, sender.index(), index(), sender.request);
+        //printf("S: deliver %08x %d => %d req %d\n",
+        //    msg, sender.index(), index(), sender.request);
         if (blocking && blocking != this) // am I waiting for a reply?
             if (!listRemove(blocking->finishQueue, *this))
                 return -1; // waiting on something else, reject this delivery
@@ -246,13 +246,12 @@ printf("S: deliver %08x %d => %d req %d\n",
     // deal with an incoming message which expects a reply
     int replyTo (Message* msg) {
         Task& sender = current();
-printf("S:   reply %08x %d => %d req %d\n",
-    msg, sender.index(), index(), sender.request);
-
+        //printf("S:   reply %08x %d => %d req %d\n",
+        //    msg, sender.index(), index(), sender.request);
         int e = deliver(sender, msg);
-        if (e < 0 && this == vec) // oops, the system task was not ready
-            printf("S: not ready for req #%d from %d\n",
-                    sender.request, sender.index());
+        //if (e < 0 && this == vec) // oops, the system task was not ready
+        //    printf("S: not ready for req #%d from %d\n",
+        //            sender.request, sender.index());
 
         // either try delivery again later, or wait for reply
         listAppend(e < 0 ? pendingQueue : finishQueue, sender);
@@ -261,13 +260,13 @@ printf("S:   reply %08x %d => %d req %d\n",
 
     // listen for incoming messages, block each sender while handling calls
     int listen (Message* msg) {
-printf("S:  listen %08x   at %d\n", msg, index());
+        //printf("S:  listen %08x   at %d\n", msg, index());
         if (pendingQueue == 0)
             return suspend(this, msg);
 
         Task& sender = *pendingQueue;
-printf("S:     got %08x %d => %d req %d\n",
-    sender.message, sender.index(), index(), sender.request);
+        //printf("S:     got %08x %d => %d req %d\n",
+        //    sender.message, sender.index(), index(), sender.request);
         pendingQueue = grab(pendingQueue->next);
         listAppend(finishQueue, sender);
         memcpy(msg, sender.message, sizeof *msg); // copy msg to this task

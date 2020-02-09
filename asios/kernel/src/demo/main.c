@@ -64,7 +64,7 @@ void systemCall (Context *ctx, int req, uint16_t pc) {
 }
 
 int main() {
-    write(1, "demo:\n", 6);
+    //write(1, "demo:\n", 6);
     if (demo(44,33,22,11) != 44 + 33 + 22 + 11)
         write(1, "demo?\n", 6);
 
@@ -73,14 +73,16 @@ int main() {
 
     // if boot sector is not as expected, init disk from scratch
     if (memcmp(CCMEM, rom, 128) != 0) {
-        diskio(0, 0 | (1<<31), (void*) rom, (sizeof rom + 127) / 128);
+        write(1, "Formatting drive A\n", 19);
+
+        diskio(0x80, 0, (void*) rom, (sizeof rom + 127) / 128);
         diskio(0, 0, CCMEM, 1);
 
         // write 16 empty directory sectors to track 2
         uint8_t buf [128];
         memset(buf, 0xE5, sizeof buf);
         for (int i = 0; i < 16; ++i)
-            diskio(0, (26*2 + i) | (1<<31), buf, 1);
+            diskio(0x80, 26*2 + i, buf, 1);
     }
 
     // leave a copy of HEXSAVE.COM at 0x0100
