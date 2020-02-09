@@ -119,7 +119,7 @@ void startTasks (void* firstTask) {
 #endif
 
     // launch main task, running in unprivileged thread mode from now on
-    ((void (*)()) psp->pc)();
+    ((void (*)(void*)) psp->pc)((void*) psp->r[0]);
     panic("main task exit");
 }
 
@@ -197,12 +197,13 @@ public:
     static constexpr int MAX_TASKS = 25;
     static Task vec [MAX_TASKS];
 
-    void init (void* stackTop, void (*func)()) {
+    void init (void* stackTop, void (*func)(void*), void* arg) {
         // use the C++11 compiler to verify some design choices
         static_assert(sizeof (Message) == 32); // fixed and known message size
         static_assert((sizeof *this & (sizeof *this - 1)) == 0); // power of 2
 
         HardwareStackFrame* psp = (HardwareStackFrame*) stackTop - 1;
+        psp->r[0] = (uint32_t) arg;
         psp->lr = (uint32_t) exit_;
         psp->pc = (uint32_t) func;
         psp->psr = 0x01000000;
@@ -460,7 +461,7 @@ void runPrivileged (void (*fun)()) {
     irqVec->sv_call = SVC_Handler;
 }
 
-void systemTask () {
+void systemTask (void* arg) {
     // This is task #0, running in thread mode. Since the MPU has not yet been
     // enabled and we have full R/W access to the interrupt vector in RAM, we
     // can still get to privileged mode by installing an exception handler and
@@ -488,14 +489,14 @@ void systemTask () {
     disk.init(); // TODO flashwear disk shouldn't be here
 
     // set up task 1, using the stack and entry point found in flash memory
-    Task::vec[1].init((void*) MMIO32(0x08004000),
-                      (void (*)()) MMIO32(0x08004004));
+    uint32_t* task1 = (uint32_t*) arg;
+    Task::vec[1].init((void*) task1[0], (void (*)(void*)) task1[1], 0);
 #if 0
 #include "test_tasks.h"
 #else
     // set up task 8, also in flash memory, for some additional experiments
     Task::vec[8].init((void*) MMIO32(0x08008000),
-                      (void (*)()) MMIO32(0x08008004));
+                      (void (*)(void*)) MMIO32(0x08008004), 0);
 #endif
 
     // these requests are forwarded to other tasks
@@ -639,8 +640,8 @@ text 08000010,4744b data 2001E000,0b bss E000,2992b sp EBB0,4176b msp FC00,1024b
 
     irqVec = &VTableRam(); // this call can't be used in thread mode
 
-    // initialize the very first task
-    Task::vec[0].init(systemStack, systemTask);
+    // initialize the very first task, and give it location of the second one
+    Task::vec[0].init(systemStack, systemTask, (void*) 0x08004000);
 
     startTasks(Task::vec); // leap into unprivileged thread mode, never returns
 }

@@ -2,7 +2,7 @@
 
 #define DEFINE_TASK(num, stacksize, body) \
 alignas(8) static uint8_t stack_##num [stacksize]; \
-Task::vec[num].init(stack_##num + stacksize, []() { body });
+Task::vec[num].init(stack_##num + stacksize, [](void*) { body }, 0);
 
 DEFINE_TASK(2, 256,
     msWait(1000);
