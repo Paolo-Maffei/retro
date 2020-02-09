@@ -278,7 +278,21 @@ public:
         return true;
     }
 
-    static void dump ();
+    // a crude task dump for basic debugging, using console & printf
+    void dump () const {
+        if (pspSaved) {
+            printf("  [%03x] %2d: %c%c sp %08x", (uint32_t) this & 0xFFF,
+                    this - vec, " *<~"[type], "USWRA"[state()], pspSaved);
+            printf(" blkg %2d pend %08x fini %08x mbuf %08x\n",
+                    blocking == 0 ? -1 : blocking->index(),
+                    pendingQueue, finishQueue, message);
+        }
+    }
+
+    static void dumpAll () {
+        for (int i = 0; i < MAX_TASKS; ++i)
+            Task::vec[i].dump();
+    }
 
 private:
     uint32_t index () const { return this - vec; }
@@ -313,20 +327,6 @@ private:
 };
 
 Task Task::vec [];
-
-// a crude task dump for basic debugging, using console & printf
-void Task::dump () {
-    for (int i = 0; i < MAX_TASKS; ++i) {
-        Task& t = Task::vec[i];
-        if (t.pspSaved) {
-            printf("  [%03x] %2d: %c%c sp %08x", (uint32_t) &t & 0xFFF,
-                    i, " *<~"[t.type], "USWRA"[t.state()], t.pspSaved);
-            printf(" blkg %2d pend %08x fini %08x mbuf %08x\n",
-                    t.blocking == 0 ? -1 : t.blocking->index(),
-                    t.pendingQueue, t.finishQueue, t.message);
-        }
-    }
-}
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // System call handlers and dispatch vector. These always run in SVC context.
@@ -490,7 +490,7 @@ void systemTask (void* arg) {
     // set up task 1, using the stack and entry point found in flash memory
     uint32_t* task1 = (uint32_t*) arg;
     Task::vec[1].init((void*) task1[0], (void (*)(void*)) task1[1], 0);
-#if 0
+#if 1
 #include "test_tasks.h"
 #else
     // set up task 8, also in flash memory, for some additional experiments

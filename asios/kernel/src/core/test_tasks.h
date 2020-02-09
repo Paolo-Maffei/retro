@@ -62,7 +62,7 @@ DEFINE_TASK(4, 256,
 DEFINE_TASK(5, 256,
     msWait(300);
     for (int i = 0; i < 3; ++i) {
-        Task::dump();
+        Task::dumpAll();
         msWait(3210);
     }
     printf("%d 5: about to exit\n", ticks);
@@ -85,6 +85,7 @@ DEFINE_TASK(6, 256,
 )
 #endif
 
+#if 0
 // gpio driver
 DEFINE_TASK(7, 256,
     while (true) {
@@ -111,7 +112,6 @@ DEFINE_TASK(7, 256,
     }
 )
 
-#if 0
 DEFINE_TASK(7, 256,
     PinA<7> led3;
     led3.mode(Pinmode::out);
