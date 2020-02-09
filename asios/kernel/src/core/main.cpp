@@ -328,41 +328,6 @@ void Task::dump () {
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Main entry point: set up the system task (task #0) and start multi-tasking.
-// Note that main knows nothing about system calls, MPU, SVC, or IRQ handlers.
-
-void systemTask (); // forward declaration
-VTable* irqVec;     // see below TODO this can be fixed in JeeH
-
-int main () {
-    console.init();
-    console.baud(115200, fullSpeedClock()/2);
-    setupFaultHandlers();
-    wait_ms(200); // give platformio's console time to connect
-
-    extern uint8_t _estack[];
-    uint8_t* systemStack = _estack - 1024; // leave 1k for the MSP stack
-
-    // display some memory usage info for the kernel + system task
-    extern uint8_t _stext[], _sidata[], _sdata[], _edata[], _sbss[], _ebss[];
-    uint32_t dataSz = _edata - _sdata, bssSz = _ebss - _sbss;
-    uint32_t textSz = (_sidata - _stext) + dataSz; // incl data init
-    printf("\n"
-        "text %08x,%db data %04x,%db bss %04x,%db free %04x,%db stack %08x\n",
-        _stext, textSz, (uint16_t) (int) _sdata, dataSz,
-        (uint16_t) (int) _sbss, bssSz, (uint16_t) (int) _ebss,
-        systemStack - _ebss, systemStack);
-//text 08000010,4732b data E000,0b bss E000,2992b free EBB0,4176b stack 2001FC00
-
-    irqVec = &VTableRam(); // this call can't be used in thread mode
-
-    // initialize the very first task
-    Task::vec[0].init(systemStack, systemTask);
-
-    startTasks(Task::vec); // leap into unprivileged thread mode, never returns
-}
-
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // System call handlers and dispatch vector. These always run in SVC context.
 // The kernel code above needs to know almost nothing about everything below.
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -484,6 +449,8 @@ void msWait (uint32_t ms) {
     }
 }
 #endif
+
+VTable* irqVec;     // see below TODO this can be fixed in JeeH
 
 // call the given function while briefly switched into privileged handler mode
 // note that for this to be robust, the system task must never be preempted
@@ -641,4 +608,36 @@ void systemTask () {
             args[0] = reply; // replace resume's result with actual one
         }
     }
+}
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Main entry point: set up the system task (task #0) and start multi-tasking.
+// Note that main knows nothing about system calls, MPU, SVC, or IRQ handlers.
+
+int main () {
+    console.init();
+    console.baud(115200, fullSpeedClock()/2);
+    setupFaultHandlers();
+    wait_ms(200); // give platformio's console time to connect
+
+    extern uint8_t _estack[];
+    uint8_t* systemStack = _estack - 1024; // leave 1k for the MSP stack
+
+    // display some memory usage info for the kernel + system task
+    extern uint8_t _stext[], _sidata[], _sdata[], _edata[], _sbss[], _ebss[];
+    uint32_t dataSz = _edata - _sdata, bssSz = _ebss - _sbss;
+    uint32_t textSz = (_sidata - _stext) + dataSz; // incl data init
+    printf("\n"
+        "text %08x,%db data %04x,%db bss %04x,%db free %04x,%db stack %08x\n",
+        _stext, textSz, (uint16_t) (int) _sdata, dataSz,
+        (uint16_t) (int) _sbss, bssSz, (uint16_t) (int) _ebss,
+        systemStack - _ebss, systemStack);
+//text 08000010,4732b data E000,0b bss E000,2992b free EBB0,4176b stack 2001FC00
+
+    irqVec = &VTableRam(); // this call can't be used in thread mode
+
+    // initialize the very first task
+    Task::vec[0].init(systemStack, systemTask);
+
+    startTasks(Task::vec); // leap into unprivileged thread mode, never returns
 }
