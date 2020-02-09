@@ -25,7 +25,7 @@ struct DWT {
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Console device and exception handler debugging.
 
-UartBufDev< PinA<9>, PinA<10>, 150 > console;
+UartBufDev< PinA<9>, PinA<10>, 2 > console;
 
 int printf (char const* fmt, ...) {
     va_list ap; va_start(ap, fmt); veprintf(console.putc, fmt, ap); va_end(ap);
@@ -224,20 +224,21 @@ public:
 
     // try to deliver a message to this task
     int deliver (Task& sender, Message* msg) {
-printf("S: deliver %08x from %d to %d\n", msg, sender.index(), index());
-if (&sender != &current()) printf("S? current %d ?\n", current().index());
+printf("S: deliver %08x %d => %d req %d\n",
+    msg, sender.index(), index(), sender.request);
+//if (&sender != &current()) printf("S? current %d ?\n", current().index());
         if (blocking && blocking != this) // am I waiting for a reply?
             if (!listRemove(blocking->finishQueue, *this))
                 return -1; // waiting on something else, reject this delivery
 
-        if (message == 0) // is this task ready to receive a message?
+        Message* buf = grab(message);
+        if (buf == 0) // is this task ready to receive a message?
             return -1; // nope, can't deliver this message
 
-        Message* myMsg = grab(message);
-        if (myMsg == (Message*) &context()) // was it a system call?
+        if (buf == (Message*) &context()) // was this a system call?
             resume(0); // let the system call return
         else { // it was a receive, blocked on listening
-            memcpy(myMsg, msg, sizeof *msg); // copy message to destination
+            memcpy(buf, msg, sizeof *msg); // copy message to destination
             resume(sender.index());
         }
         return 0; // successful delivery
@@ -246,7 +247,8 @@ if (&sender != &current()) printf("S? current %d ?\n", current().index());
     // deal with an incoming message which expects a reply
     int replyTo (Message* msg) {
         Task& sender = current();
-printf("S: replyTo %08x from %d this %d\n", msg, sender.index(), index());
+printf("S:   reply %08x %d => %d req %d\n",
+    msg, sender.index(), index(), sender.request);
 
         int e = deliver(sender, msg);
         if (e < 0 && this == vec) // oops, the system task was not ready
@@ -260,12 +262,14 @@ printf("S: replyTo %08x from %d this %d\n", msg, sender.index(), index());
 
     // listen for incoming messages, block each sender while handling calls
     int listen (Message* msg) {
-printf("S:  listen %08x this %d\n", msg, index());
-if (this != &current()) printf("S? current %d ?\n", current().index());
+printf("S:  listen %08x   at %d\n", msg, index());
+//if (this != &current()) printf("S? current %d ?\n", current().index());
         if (pendingQueue == 0)
             return suspend(this, msg);
 
         Task& sender = *pendingQueue;
+printf("S:     got %08x %d => %d req %d\n",
+    sender.message, sender.index(), index(), sender.request);
         pendingQueue = grab(pendingQueue->next);
         listAppend(finishQueue, sender);
         memcpy(msg, sender.message, sizeof *msg); // copy msg to this task
