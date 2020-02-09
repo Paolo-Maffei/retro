@@ -85,15 +85,13 @@ DEFINE_TASK(6, 256,
 )
 #endif
 
-#if 0
 // gpio driver
 DEFINE_TASK(7, 256,
     while (true) {
         Message msg;
         int src = ipcRecv(&msg);
-        uint32_t* args = msg.args;
 
-        int  cmd = args[0]; //gpioPin = args[1];
+        int cmd = msg[0]; //gpioPin = msg[1];
         //char port = 'A' + (gpioPin >> 4) - 0xA;
         //Pin<port,gpioPin&0xF> pin;
         //printf("%d 7: cmd %d from %d\n", ticks, cmd, src);
@@ -105,13 +103,14 @@ DEFINE_TASK(7, 256,
             case 2: pin = 1; break;
         }
 
-        //args[0] = 0; // reply
+        //msg[0] = 0; // reply
         int e = ipcSend(src, &msg);
         if (e != 0)
             printf("%d 7: reply send got %d\n", ticks, e);
     }
 )
 
+#if 0
 DEFINE_TASK(7, 256,
     PinA<7> led3;
     led3.mode(Pinmode::out);
