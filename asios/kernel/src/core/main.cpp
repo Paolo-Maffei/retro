@@ -226,7 +226,6 @@ public:
     int deliver (Task& sender, Message* msg) {
 printf("S: deliver %08x %d => %d req %d\n",
     msg, sender.index(), index(), sender.request);
-//if (&sender != &current()) printf("S? current %d ?\n", current().index());
         if (blocking && blocking != this) // am I waiting for a reply?
             if (!listRemove(blocking->finishQueue, *this))
                 return -1; // waiting on something else, reject this delivery
@@ -263,7 +262,6 @@ printf("S:   reply %08x %d => %d req %d\n",
     // listen for incoming messages, block each sender while handling calls
     int listen (Message* msg) {
 printf("S:  listen %08x   at %d\n", msg, index());
-//if (this != &current()) printf("S? current %d ?\n", current().index());
         if (pendingQueue == 0)
             return suspend(this, msg);
 
