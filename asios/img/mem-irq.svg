@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xl="http://www.w3.org/1999/xlink" xmlns:dc="http://purl.org/dc/elements/1.1/" viewBox="135.75 295.875 424.375 153.47308" width="424.375" height="153.47308">
+  <defs>
+    <font-face font-family="Lucida Grande" font-size="17" panose-1="2 11 6 0 4 5 2 2 2 4" units-per-em="1000" underline-position="-97.65625" underline-thickness="48.828125" slope="0" x-height="530.27344" cap-height="722.65625" ascent="966.7969" descent="-210.9375" font-weight="400">
+      <font-face-src>
+        <font-face-name name="LucidaGrande"/>
+      </font-face-src>
+    </font-face>
+    <font-face font-family="Helvetica Neue" font-size="17" panose-1="2 0 5 3 0 0 0 2 0 4" units-per-em="1000" underline-position="-100" underline-thickness="50" slope="0" x-height="517" cap-height="714" ascent="951.9958" descent="-212.99744" font-weight="400">
+      <font-face-src>
+        <font-face-name name="HelveticaNeue"/>
+      </font-face-src>
+    </font-face>
+    <font-face font-family="Helvetica Neue" font-size="12" panose-1="2 0 8 3 0 0 0 9 0 4" units-per-em="1000" underline-position="-100" underline-thickness="50" slope="0" x-height="517" cap-height="714" ascent="975.0061" descent="-216.99524" font-weight="700">
+      <font-face-src>
+        <font-face-name name="HelveticaNeue-Bold"/>
+      </font-face-src>
+    </font-face>
+    <marker orient="auto" overflow="visible" markerUnits="strokeWidth" id="StickArrow_Marker" stroke-linejoin="miter" stroke-miterlimit="10" viewBox="-9 -4 10 8" markerWidth="10" markerHeight="8" color="black">
+      <g>
+        <path d="M -8 0 L 0 0 M 0 3 L -8 0 L 0 -3" fill="none" stroke="currentColor" stroke-width="1"/>
+      </g>
+    </marker>
+    <font-face font-family="Helvetica Neue" font-size="15" panose-1="2 0 5 3 0 0 0 9 0 4" units-per-em="1000" underline-position="-100" underline-thickness="50" slope="-800" x-height="517" cap-height="714" ascent="957.0007" descent="-212.99744" font-style="italic" font-weight="400">
+      <font-face-src>
+        <font-face-name name="HelveticaNeue-Italic"/>
+      </font-face-src>
+    </font-face>
+  </defs>
+  <metadata> Produced by OmniGraffle 7.12.1 
+    <dc:date>2020-02-09 01:03:40 +0000</dc:date>
+  </metadata>
+  <g id="Canvas_1" stroke-dasharray="none" stroke-opacity="1" stroke="none" fill="none" fill-opacity="1">
+    <title>Canvas 1</title>
+    <rect fill="white" x="135.75" y="295.875" width="424.375" height="153.47308"/>
+    <g id="Canvas_1: Layer 1">
+      <title>Layer 1</title>
+      <g id="Graphic_18">
+        <rect x="336" y="312" width="80" height="24" fill="#ffffc0"/>
+        <rect x="336" y="312" width="80" height="24" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width=".5"/>
+        <text transform="translate(341 313.762)" fill="black">
+          <tspan font-family="Lucida Grande" font-size="17" font-weight="400" fill="black" x="3.669" y="16">←</tspan>
+          <tspan font-family="Helvetica Neue" font-size="17" font-weight="400" fill="black" y="16"> stack</tspan>
+        </text>
+      </g>
+      <g id="Graphic_19">
+        <rect x="136" y="312" width="32" height="24" fill="#ffffc0"/>
+        <rect x="136" y="312" width="32" height="24" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width=".5"/>
+        <text transform="translate(141 313.762)" fill="black">
+          <tspan font-family="Helvetica Neue" font-size="17" font-weight="400" fill="black" x="2.5" y="16">…</tspan>
+        </text>
+      </g>
+      <g id="Graphic_20">
+        <text transform="translate(213 357)" fill="black">
+          <tspan font-family="Helvetica Neue" font-size="12" font-weight="700" fill="black" x="7.102" y="12">PSP</tspan>
+        </text>
+      </g>
+      <g id="Line_21">
+        <line x1="232" y1="345.9" x2="232" y2="352" marker-start="url(#StickArrow_Marker)" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width="1"/>
+      </g>
+      <g id="Graphic_22">
+        <rect x="232" y="312" width="104" height="24" fill="#ffffc0"/>
+        <rect x="232" y="312" width="104" height="24" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width=".5"/>
+        <text transform="translate(237 313.762)" fill="black">
+          <tspan font-family="Helvetica Neue" font-size="17" font-weight="400" fill="black" x="5.5965" y="16">saved regs</tspan>
+        </text>
+      </g>
+      <g id="Graphic_23">
+        <rect x="336" y="384" width="80" height="24" fill="#ffc0c0"/>
+        <rect x="336" y="384" width="80" height="24" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width=".5"/>
+        <text transform="translate(341 385.762)" fill="black">
+          <tspan font-family="Lucida Grande" font-size="17" font-weight="400" fill="black" x="3.669" y="16">←</tspan>
+          <tspan font-family="Helvetica Neue" font-size="17" font-weight="400" fill="black" y="16"> stack</tspan>
+        </text>
+      </g>
+      <g id="Graphic_24">
+        <text transform="translate(325 429)" fill="black">
+          <tspan font-family="Helvetica Neue" font-size="12" font-weight="700" fill="black" x="2.83" y="12">SP = MSP</tspan>
+        </text>
+      </g>
+      <g id="Line_25">
+        <line x1="336" y1="417.9" x2="336" y2="424" marker-start="url(#StickArrow_Marker)" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width="1"/>
+      </g>
+      <g id="Graphic_28">
+        <ellipse cx="500" cy="324" rx="60.0000958741138" ry="28.0000447412531" fill="#ffffc0"/>
+        <ellipse cx="500" cy="324" rx="60.0000958741138" ry="28.0000447412531" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width=".25"/>
+        <text transform="translate(457 306.58)" fill="black">
+          <tspan font-family="Helvetica Neue" font-size="15" font-style="italic" font-weight="400" fill="black" x="28.42" y="14">Task </tspan>
+          <tspan font-family="Helvetica Neue" font-size="15" font-style="italic" font-weight="400" fill="black" x="15.7825" y="31.42">memory</tspan>
+        </text>
+      </g>
+      <g id="Graphic_29">
+        <ellipse cx="500" cy="396" rx="60.0000958741138" ry="28.0000447412531" fill="#ffc0c0"/>
+        <ellipse cx="500" cy="396" rx="60.0000958741138" ry="28.0000447412531" stroke="black" stroke-linecap="round" stroke-linejoin="round" stroke-width=".25"/>
+        <text transform="translate(457 378.58)" fill="black">
+          <tspan font-family="Helvetica Neue" font-size="15" font-style="italic" font-weight="400" fill="black" x="21.475" y="14">Kernel </tspan>
+          <tspan font-family="Helvetica Neue" font-size="15" font-style="italic" font-weight="400" fill="black" x="15.7825" y="31.42">memory</tspan>
+        </text>
+      </g>
+    </g>
+  </g>
+</svg>
