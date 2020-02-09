@@ -168,10 +168,7 @@ bool listRemove (T*& list, T& item) {
 struct Message {
     uint8_t req;
     uint8_t extra [3];
-    union {
-        uint32_t* args;
-        int payload [7];
-    };
+    int payload [7];
 };
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -245,8 +242,8 @@ public:
         Task& sender = current();
         int e = deliver(sender, msg);
         if (e < 0 && this == vec) // oops, the system task was not ready
-            printf("S: not ready for req #%d from %d args %08x\n",
-                    msg->req, sender.index(), msg->args);
+            printf("S: not ready for req #%d from %d\n",
+                    msg->req, sender.index());
         // either try delivery again later, or wait for reply
         listAppend(e < 0 ? pendingQueue : finishQueue, sender);
         sender.message = msg;
@@ -411,7 +408,6 @@ void SVC_Handler () {
             // msg can be on the stack, because task #0 always accepts 'em now
             Message sysMsg;
             sysMsg.req = req;
-            sysMsg.args = sfp->r;
             (void) Task::vec[0].replyTo(&sysMsg); // XXX explain void
         }
     }
