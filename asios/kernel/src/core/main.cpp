@@ -401,8 +401,8 @@ void SVC_Handler () {
 
         // wrap everything else into a message-less ipcCall to task #0
         default: {
-// msg can be on the stack, because task #0 always accepts 'em now
-Message sysMsg;
+            // msg can be on the stack, because task #0 always accepts 'em now
+            Message sysMsg;
             Task::current().request = req;
             (void) Task::vec[0].replyTo(&sysMsg); // no message buf XXX explain void
         }
