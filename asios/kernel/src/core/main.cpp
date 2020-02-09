@@ -246,38 +246,37 @@ if (&sender != &current()) printf("S? current %d ?\n", current().index());
     // deal with an incoming message which expects a reply
     int replyTo (Message* msg) {
         Task& sender = current();
-        int e = deliver(sender, msg);
-#if 1
 printf("S: replyTo %08x from %d this %d\n", msg, sender.index(), index());
+
+        int e = deliver(sender, msg);
         if (e < 0 && this == vec) // oops, the system task was not ready
             printf("S: not ready for req #%d from %d\n",
                     sender.request, sender.index());
-#endif
+
         // either try delivery again later, or wait for reply
         listAppend(e < 0 ? pendingQueue : finishQueue, sender);
-        sender.message = msg ? msg : (Message*) &sender.context();
-        return sender.suspend(this);
+        return sender.suspend(this, msg);
     }
 
     // listen for incoming messages, block each sender while handling calls
     int listen (Message* msg) {
 printf("S:  listen %08x this %d\n", msg, index());
 if (this != &current()) printf("S? current %d ?\n", current().index());
-        if (pendingQueue != 0) {
-            Task& sender = *pendingQueue;
-            pendingQueue = grab(pendingQueue->next);
-            listAppend(finishQueue, sender);
-            memcpy(msg, sender.message, sizeof *msg); // copy msg to this task
-            return sender.index();
-        }
-        message = msg;
-        return suspend(this);
+        if (pendingQueue == 0)
+            return suspend(this, msg);
+
+        Task& sender = *pendingQueue;
+        pendingQueue = grab(pendingQueue->next);
+        listAppend(finishQueue, sender);
+        memcpy(msg, sender.message, sizeof *msg); // copy msg to this task
+        return sender.index();
     }
 
     // forward current call to this destination
     bool forward (Task& sender, Message* msg) {
         if (!listRemove(current().finishQueue, sender))
             return false;
+
         sender.blocking = 0;
         memcpy(sender.message, msg, sizeof *msg); // copy request back to sender
         int e = deliver(sender, sender.message); // re-deliver
@@ -314,7 +313,7 @@ private:
                                Active;      // currently running
     }
 
-    int suspend (Task* reason) {
+    int suspend (Task* reason, Message* msg) {
         if (pspSw.curr != &pspSaved) // could be supported, but no need so far
             printf(">>> SUSPEND? %08x != curr %08x\n", this, pspSw.curr);
 
@@ -324,6 +323,7 @@ private:
         changeTask(next); // will trigger PendSV tail-chaining
 
         blocking = reason;
+        message = msg ? msg : (Message*) &context();
         return -1; // suspended, this result will be adjusted in resume()
     }
 
