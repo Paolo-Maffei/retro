@@ -592,13 +592,13 @@ void systemTask (void* arg) {
             }
 
             case SYSCALL_diskio: {
-                uint32_t rw = args[0], sec = args[1], cnt = args[3];
+                uint32_t rw = args[0], pos = args[1], cnt = args[3];
                 uint8_t* ptr = (uint8_t*) args[2];
                 for (uint32_t i = 0; i < cnt; ++i) {
                     if (rw)
-                        disk.writeSector(sec + i, ptr);
+                        disk.writeSector(pos + i, ptr);
                     else
-                        disk.readSector(sec + i, ptr);
+                        disk.readSector(pos + i, ptr);
                     ptr += 128;
                 }
                 reply = 0;
