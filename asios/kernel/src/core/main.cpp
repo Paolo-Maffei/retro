@@ -245,11 +245,8 @@ public:
         Task& sender = current();
         int e = deliver(sender, msg);
         if (e < 0 && this == vec) // oops, the system task was not ready
-            printf("S: not ready for req #%d from %d args %08x ?\n",
+            printf("S: not ready for req #%d from %d args %08x\n",
                     msg->req, sender.index(), msg->args);
-        if (msg->req == 4)
-            printf("rt m %x e %d f %d t %d\n",
-                    msg, e, sender.index(), index());
         // either try delivery again later, or wait for reply
         listAppend(e < 0 ? pendingQueue : finishQueue, sender);
         sender.message = msg;
@@ -516,7 +513,7 @@ void systemTask (void* arg) {
         // examine the incoming request, calls will need a reply
         int req = sysMsg.req;
         Task& sender = Task::vec[src];
-        uint32_t* args = sender.context().r; ///sysMsg.args;
+        uint32_t* args = sender.context().r;
         bool isCall = sender.blocking == Task::vec;
         int reply = -1; // the default reply is failure
 
@@ -540,7 +537,7 @@ void systemTask (void* arg) {
                         req, src, sr.task);
             continue;
         }
-#if 1
+#if 0
         if (req == 4)
             printf("%d S: ipc %s req #%d from %d args %08x\n",
                     ticks, isCall ? "CALL" : "SEND", req, src, args);
