@@ -17,7 +17,7 @@ enum {
     SYSCALL_MAX
 };
 
-struct Message;
+typedef int Message [8];
 
 // helper to define system call stubs (up to 4 typed args, returning int)
 #ifndef DEFINE_SYSCALLS
@@ -31,9 +31,9 @@ struct Message;
 #endif
 
 // these are all the system call stubs
-SYSCALL_STUB(ipcSend, (int dst, struct Message* msg))
-SYSCALL_STUB(ipcCall, (int dst, struct Message* msg))
-SYSCALL_STUB(ipcRecv, (struct Message* msg))
+SYSCALL_STUB(ipcSend, (int dst, Message* msg))
+SYSCALL_STUB(ipcCall, (int dst, Message* msg))
+SYSCALL_STUB(ipcRecv, (Message* msg))
 //SYSCALL_STUB(ipcPass, (int dst, Message* msg))
 SYSCALL_STUB(noop, (void))
 SYSCALL_STUB(demo, (int a, int b, int c, int d))

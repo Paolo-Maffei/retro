@@ -1,6 +1,6 @@
 #include <jee.h>
-
 #include <string.h>
+
 #include "flashwear.h" // TODO this probably shouldn't be in the kernel
 FlashWear disk;
 
@@ -165,11 +165,7 @@ bool listRemove (T*& list, T& item) {
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Message-based IPC.
 
-struct Message {
-    uint8_t req;
-    uint8_t extra [3];
-    int payload [7];
-};
+typedef int Message [8];
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Tasks and task management.
@@ -188,8 +184,9 @@ public:
 
     enum { Early, App, Server, Driver }; // type of task
     uint8_t type :2;    // set once the first SVC call is made
+    uint8_t request;    // non-zero when a system call is in progress
 
-    uint8_t spare[3];   // pad the total task size to 32 bytes
+    uint8_t spare[2];   // pad the total task size to 32 bytes
 
     static constexpr int MAX_TASKS = 25;
     static Task vec [MAX_TASKS];
@@ -236,7 +233,7 @@ public:
         if (message == 0) // is this task ready to receive a message?
             return -1; // nope, can't deliver this message
 
-        *grab(message) = *msg; // copy message to destination
+        memcpy(grab(message), msg, sizeof *msg); // copy message to destination
         resume(waitingForMe ? 0 : sender.index()); // if a reply, return 0
         return 0; // successful delivery
     }
@@ -247,7 +244,7 @@ public:
         int e = deliver(sender, msg);
         if (e < 0 && this == vec) // oops, the system task was not ready
             printf("S: not ready for req #%d from %d\n",
-                    msg->req, sender.index());
+                    sender.request, sender.index());
         // either try delivery again later, or wait for reply
         listAppend(e < 0 ? pendingQueue : finishQueue, sender);
         sender.message = msg;
@@ -260,7 +257,7 @@ public:
             Task& sender = *pendingQueue;
             pendingQueue = grab(pendingQueue->next);
             listAppend(finishQueue, sender);
-            *msg = *sender.message; // copy message to this receiver
+            memcpy(msg, sender.message, sizeof *msg); // copy msg to this task
             return sender.index();
         }
         message = msg;
@@ -272,7 +269,7 @@ public:
         if (!listRemove(current().finishQueue, sender))
             return false;
         sender.blocking = 0;
-        *sender.message = *msg; // copy (possibly modified) request to sender
+        memcpy(sender.message, msg, sizeof *msg); // copy request back to sender
         int e = deliver(sender, sender.message); // re-deliver
         listAppend(e < 0 ? pendingQueue : finishQueue, sender);
         return true;
@@ -406,7 +403,7 @@ void SVC_Handler () {
         default: {
             // msg can be on the stack, because task #0 always accepts 'em now
             Message sysMsg;
-            sysMsg.req = req;
+            Task::current().request = req;
             (void) Task::vec[0].replyTo(&sysMsg); // XXX explain void
         }
     }
@@ -506,8 +503,8 @@ void systemTask (void* arg) {
         int src = ipcRecv(&sysMsg);
 
         // examine the incoming request, calls will need a reply
-        int req = sysMsg.req;
         Task& sender = Task::vec[src];
+        int req = sender.request;
         uint32_t* args = sender.context().r;
         bool isCall = sender.blocking == Task::vec;
         int reply = -1; // the default reply is failure
@@ -522,7 +519,7 @@ void systemTask (void* arg) {
             if (isCall) {
                 //printf("S: rerouting req #%d from %d to %d\n",
                 //        req, src, sr.task);
-                sysMsg.req = sr.num; // adjust request code before forwarding
+                sender.request = sr.num; // adjust request code before forward
                 bool f = Task::vec[sr.task].forward(sender, &sysMsg);
                 if (!f)
                     printf("S: forward failed, req #%d from %d to %d\n",

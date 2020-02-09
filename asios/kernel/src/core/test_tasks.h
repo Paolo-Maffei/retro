@@ -10,11 +10,11 @@ DEFINE_TASK(2, 256,
     while (true) {
         Message msg;
         int src = ipcRecv(&msg);
-        printf("%d 2: received #%d from %d\n", ticks, msg.req, src);
+        printf("%d 2: received #%d from %d\n", ticks, msg[0], src);
         if (src == 4) {
             msWait(50);
-            msg.req = -msg.req;
-            printf("%d 2: about to reply #%d to %d\n", ticks, msg.req, src);
+            msg[0] = -msg[0];
+            printf("%d 2: about to reply #%d to %d\n", ticks, msg[0], src);
             int e = ipcSend(src, &msg);
             if (e != 0)
                 printf("%d 2: reply? %d\n", ticks, e);
@@ -24,10 +24,10 @@ DEFINE_TASK(2, 256,
 
 DEFINE_TASK(3, 256,
     Message msg;
-    msg.req = 99;
+    msg[0] = 99;
     while (true) {
         msWait(500);
-        printf("%d 3: sending #%d\n", ticks, ++msg.req);
+        printf("%d 3: sending #%d\n", ticks, ++msg[0]);
 #if 1
         int e = ipcSend(2, &msg);
 #else
@@ -49,12 +49,12 @@ DEFINE_TASK(3, 256,
 
 DEFINE_TASK(4, 256,
     Message msg;
-    msg.req = 250;
+    msg[0] = 250;
     while (true) {
         msWait(2000);
-        printf("%d 4: calling #%d\n", ticks, ++msg.req);
+        printf("%d 4: calling #%d\n", ticks, ++msg[0]);
         int e = ipcCall(2, &msg);
-        printf("%d 4: result #%d status %d\n", ticks, msg.req, e);
+        printf("%d 4: result #%d status %d\n", ticks, msg[0], e);
         msWait(2000);
     }
 )
