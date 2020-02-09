@@ -244,6 +244,12 @@ public:
     int replyTo (Message* msg) {
         Task& sender = current();
         int e = deliver(sender, msg);
+        if (e < 0 && this == vec) // oops, the system task was not ready
+            printf("S: not ready for req #%d from %d args %08x ?\n",
+                    msg->req, sender.index(), msg->args);
+        if (msg->req == 4)
+            printf("rt m %x e %d f %d t %d\n",
+                    msg, e, sender.index(), index());
         // either try delivery again later, or wait for reply
         listAppend(e < 0 ? pendingQueue : finishQueue, sender);
         sender.message = msg;
@@ -289,6 +295,7 @@ private:
                                Active;      // currently running
     }
 
+public:
     HardwareStackFrame& context () const {
         return *(HardwareStackFrame*) (pspSaved + PSP_EXTRA);
     }
@@ -508,8 +515,8 @@ void systemTask (void* arg) {
 
         // examine the incoming request, calls will need a reply
         int req = sysMsg.req;
-        uint32_t* args = sysMsg.args;
         Task& sender = Task::vec[src];
+        uint32_t* args = sender.context().r; ///sysMsg.args;
         bool isCall = sender.blocking == Task::vec;
         int reply = -1; // the default reply is failure
 
@@ -533,10 +540,10 @@ void systemTask (void* arg) {
                         req, src, sr.task);
             continue;
         }
-#if 0
-        if (req != 3 && req != 9)
-            printf("%d S: ipc %s req #%d from %d\n",
-                    ticks, isCall ? "CALL" : "SEND", req, src);
+#if 1
+        if (req == 4)
+            printf("%d S: ipc %s req #%d from %d args %08x\n",
+                    ticks, isCall ? "CALL" : "SEND", req, src, args);
 #endif
         // non-forwarded requests are handled by this system task
         switch (req) {
@@ -640,7 +647,7 @@ text 08000010,4744b data 2001E000,0b bss E000,2992b sp EBB0,4176b msp FC00,1024b
 
     irqVec = &VTableRam(); // this call can't be used in thread mode
 
-    // initialize the very first task, and give it location of the second one
+    // initialize the very first task, and give it the vector of the second one
     Task::vec[0].init(systemStack, systemTask, (void*) 0x08004000);
 
     startTasks(Task::vec); // leap into unprivileged thread mode, never returns
