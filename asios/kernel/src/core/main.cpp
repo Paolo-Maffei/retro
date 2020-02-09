@@ -76,7 +76,7 @@ struct {
 } pspSw;
 
 // context switcher, includes updating MPU maps, no floating point support
-// this does not need to know about tasks, just pointers to its first 2 fields
+// this doesn't need to know about tasks, just a pointer to its first 2 fields
 void PendSV_Handler () {
     //DWT::start();
     asm volatile ("\
@@ -625,14 +625,17 @@ int main () {
 
     // display some memory usage info for the kernel + system task
     extern uint8_t _stext[], _sidata[], _sdata[], _edata[], _sbss[], _ebss[];
-    uint32_t dataSz = _edata - _sdata, bssSz = _ebss - _sbss;
-    uint32_t textSz = (_sidata - _stext) + dataSz; // incl data init
+    uint32_t textSz = (_sidata - _stext) + (_edata - _sdata); // incl data init
     printf("\n"
-        "text %08x,%db data %04x,%db bss %04x,%db free %04x,%db stack %08x\n",
-        _stext, textSz, (uint16_t) (int) _sdata, dataSz,
-        (uint16_t) (int) _sbss, bssSz, (uint16_t) (int) _ebss,
-        systemStack - _ebss, systemStack);
-//text 08000010,4732b data E000,0b bss E000,2992b free EBB0,4176b stack 2001FC00
+           "text %08x,%db data %08x,%db bss %04x,%db sp %04x,%db msp %04x,%db"
+           "\n",
+        _stext, textSz, _sdata, _edata - _sdata,
+        (uint16_t) (int) _sbss, _ebss - _sbss,
+        (uint16_t) (int) _ebss, systemStack - _ebss,
+        (uint16_t) (int) systemStack, _estack - systemStack);
+/*
+text 08000010,4744b data 2001E000,0b bss E000,2992b sp EBB0,4176b msp FC00,1024b
+*/
 
     irqVec = &VTableRam(); // this call can't be used in thread mode
 
