@@ -209,6 +209,10 @@ public:
         mpuMaps = (uint32_t*) dummyMaps;
     }
 
+    HardwareStackFrame& context () const {
+        return *(HardwareStackFrame*) (pspSaved + PSP_EXTRA);
+    }
+
     static Task& current () { return *(Task*) pspSw.curr; }
 
     static Task* nextRunnable () {
@@ -287,11 +291,6 @@ private:
                     blocking ? Waiting :    // waiting on another task
           this != &current() ? Runnable :   // will run when scheduled
                                Active;      // currently running
-    }
-
-public:
-    HardwareStackFrame& context () const {
-        return *(HardwareStackFrame*) (pspSaved + PSP_EXTRA);
     }
 
     int suspend (Task* reason) {
