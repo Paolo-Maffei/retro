@@ -50,10 +50,9 @@ void systemCall (Context *ctx, int req, uint16_t pc) {
             break;
 
         case 4: { // r/w diskio
-            uint8_t sec = DE, trk = DE>>8, dsk = A | (B&0x80), cnt = B&0x7F;
-            uint32_t pos = 26*trk + sec;  // no skewing
-            diskio(dsk, pos, CCMEM + HL, cnt);
-            A = 0;
+            uint8_t sec = DE, trk = DE>>8, dsk = A, rw = B>>7, cnt = B & 0x7F;
+            uint32_t pos = 2048*dsk + 26*trk + sec;  // no skewing
+            A = diskio(rw, pos, CCMEM + HL, cnt);
             break;
         }
 
@@ -73,16 +72,19 @@ int main() {
 
     // if boot sector is not as expected, init disk from scratch
     if (memcmp(CCMEM, rom, 128) != 0) {
-        write(1, "Formatting drive A\n", 19);
+        write(1, "Setting up drive A\n", 19);
 
-        diskio(0x80, 0, (void*) rom, (sizeof rom + 127) / 128);
-        diskio(0, 0, CCMEM, 1);
+        // write the system tracks
+        diskio(1, 0, (void*) rom, (sizeof rom + 127) / 128);
 
         // write 16 empty directory sectors to track 2
         uint8_t buf [128];
         memset(buf, 0xE5, sizeof buf);
         for (int i = 0; i < 16; ++i)
-            diskio(0x80, 26*2 + i, buf, 1);
+            diskio(1, 26*2 + i, buf, 1);
+
+        // load the boatstrap sector again
+        diskio(0, 0, CCMEM, 1);
     }
 
     // leave a copy of HEXSAVE.COM at 0x0100
@@ -90,8 +92,6 @@ int main() {
 
     // start emulating
     Z80Reset(&context.state);
-    context.done = 0;
-
     do
         Z80Emulate(&context.state, 2000000, &context);
     while (!context.done);
