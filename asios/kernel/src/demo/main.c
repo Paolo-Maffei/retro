@@ -64,6 +64,7 @@ void systemCall (Context *ctx, int req, uint16_t pc) {
 }
 
 int main() {
+    write(1, "demo:\n", 6);
     if (demo(44,33,22,11) != 44 + 33 + 22 + 11)
         write(1, "demo?\n", 6);
 

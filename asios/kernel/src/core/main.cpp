@@ -42,6 +42,7 @@ void kputs (char const* msg) {
 
 // give up, but not before trying to send a final message to the console port
 void panic (char const* msg) {
+    for (int i = 0; i < 10000000; ++i) asm (""); // give uart time to settle
     asm volatile ("cpsid if"); // disable interrupts and faults
     kputs("\n*** panic: "); kputs(msg); kputs(" ***\n");
     while (true) {} // hang
@@ -223,18 +224,22 @@ public:
 
     // try to deliver a message to this task
     int deliver (Task& sender, Message* msg) {
-        bool waitingForMe = false;
-        if (blocking && blocking != this) { // is it waiting for completion?
-            waitingForMe = listRemove(blocking->finishQueue, *this);
-            if (!waitingForMe)
+printf("S: deliver %08x from %d to %d\n", msg, sender.index(), index());
+if (&sender != &current()) printf("S? current %d ?\n", current().index());
+        if (blocking && blocking != this) // am I waiting for a reply?
+            if (!listRemove(blocking->finishQueue, *this))
                 return -1; // waiting on something else, reject this delivery
-        }
 
         if (message == 0) // is this task ready to receive a message?
             return -1; // nope, can't deliver this message
 
-        memcpy(grab(message), msg, sizeof *msg); // copy message to destination
-        resume(waitingForMe ? 0 : sender.index()); // if a reply, return 0
+        Message* myMsg = grab(message);
+        if (myMsg == (Message*) &context()) // was it a system call?
+            resume(0); // let the system call return
+        else { // it was a receive, blocked on listening
+            memcpy(myMsg, msg, sizeof *msg); // copy message to destination
+            resume(sender.index());
+        }
         return 0; // successful delivery
     }
 
@@ -242,17 +247,22 @@ public:
     int replyTo (Message* msg) {
         Task& sender = current();
         int e = deliver(sender, msg);
+#if 1
+printf("S: replyTo %08x from %d this %d\n", msg, sender.index(), index());
         if (e < 0 && this == vec) // oops, the system task was not ready
             printf("S: not ready for req #%d from %d\n",
                     sender.request, sender.index());
+#endif
         // either try delivery again later, or wait for reply
         listAppend(e < 0 ? pendingQueue : finishQueue, sender);
-        sender.message = msg;
+        sender.message = msg ? msg : (Message*) &sender.context();
         return sender.suspend(this);
     }
 
     // listen for incoming messages, block each sender while handling calls
     int listen (Message* msg) {
+printf("S:  listen %08x this %d\n", msg, index());
+if (this != &current()) printf("S? current %d ?\n", current().index());
         if (pendingQueue != 0) {
             Task& sender = *pendingQueue;
             pendingQueue = grab(pendingQueue->next);
@@ -280,7 +290,7 @@ public:
         if (pspSaved) {
             printf("  [%03x] %2d: %c%c sp %08x", (uint32_t) this & 0xFFF,
                     this - vec, " *<~"[type], "USWRA"[state()], pspSaved);
-            printf(" blkg %2d pend %08x fini %08x mbuf %08x req %d\n",
+            printf(" blk %2d pq %08x fq %08x buf %08x req %d\n",
                     blocking == 0 ? -1 : blocking->index(),
                     pendingQueue, finishQueue, message, request);
         }
@@ -401,10 +411,8 @@ void SVC_Handler () {
 
         // wrap everything else into a message-less ipcCall to task #0
         default: {
-            // msg can be on the stack, because task #0 always accepts 'em now
-            Message sysMsg;
-            Task::current().request = req;
-            (void) Task::vec[0].replyTo(&sysMsg); // no message buf XXX explain void
+            Task::current().request = req; // save SVC number in task object
+            (void) Task::vec[0].replyTo(0); // no message buf XXX explain void
         }
     }
 }
