@@ -6,8 +6,8 @@ int main () {
         write(1, "demo??\n", 7);
 
     // fork a new task, also in flash memory, for some additional experiments
-    int* vec = (int*) 0x08008000;
-    tfork((void*) vec[0], (void (*)(void*)) vec[1], 0);
+    int* task = (int*) 0x08008000;
+    twait(tfork((void*) task[0], (void (*)(void*)) task[1], 0));
 
     texit(0);
 }

@@ -608,7 +608,7 @@ void systemTask (void* arg) {
                 void (*proc)(void*) = (void (*)(void*)) args[1];
                 void* arg = (void*) args[2];
                 reply = Task::findSlot();
-                printf("%d S: fork by %d => %d sp %08x pc %08x arg %08x\n",
+                printf("%d S: tfork by %d => %d sp %08x pc %08x arg %d\n",
                         ticks, src, reply, top, proc, arg);
                 if (reply >= 0)
                     Task::vec[reply].init(top, proc, arg);
