@@ -1,7 +1,8 @@
 # Using CP/M as a command shell
 
-To get the new microkernel usable fast, we need some kind of filesystem and some
-kind of "shell", i.e. a way to type commands and interactively launch programs.
+To get the new microkernel usable fast, it needs some kind of filesystem and
+some kind of "shell", i.e. a way to type commands and interactively launch
+programs.
 
 So here's a crazy idea: why not use an existing system for managing files on a
 (virtual) disk, and with a built-in "Console Command Processor" to type at?
