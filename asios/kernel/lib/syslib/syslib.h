@@ -1,5 +1,6 @@
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // System call handlers and dispatch vector. These always run in SVC context.
+// Changing the enum or argument list APIs below requires full recompilation.
 
 enum {
     SYSCALL_ipcSend,
@@ -14,6 +15,8 @@ enum {
     SYSCALL_read,
     SYSCALL_ioctl,
     SYSCALL_diskio,
+    SYSCALL_tfork,
+    SYSCALL_twait,
     SYSCALL_MAX
 };
 
@@ -35,11 +38,16 @@ SYSCALL_STUB(ipcSend, (int dst, Message* msg))
 SYSCALL_STUB(ipcCall, (int dst, Message* msg))
 SYSCALL_STUB(ipcRecv, (Message* msg))
 //SYSCALL_STUB(ipcPass, (int dst, Message* msg))
+
 SYSCALL_STUB(noop, (void))
 SYSCALL_STUB(demo, (int a, int b, int c, int d))
-SYSCALL_STUB(texit, (int e))
 SYSCALL_STUB(gpio, (int gpioPin, int gpioCmd))
+
 SYSCALL_STUB(write, (int fd, void const* ptr, int len))
 SYSCALL_STUB(read, (int fd, void* ptr, int len))
 SYSCALL_STUB(ioctl, (int fd, int req, ...))
 SYSCALL_STUB(diskio, (int rw, int pos, void* buf, int cnt))
+
+SYSCALL_STUB(tfork, (void* top, void (*proc)(void*), void* arg))
+SYSCALL_STUB(twait, (int id))
+SYSCALL_STUB(texit, (int e))

@@ -192,15 +192,22 @@ public:
     static constexpr int MAX_TASKS = 25;
     static Task vec [MAX_TASKS];
 
-    void init (void* stackTop, void (*func)(void*), void* arg) {
+    static int findSlot () {
+        for (int i = 0; i < MAX_TASKS; ++i)
+            if (vec[i].state() == Unused)
+                return i;
+        return -1;
+    }
+
+    void init (void* top, void (*proc)(void*), void* arg) {
         // use the C++11 compiler to verify some design choices
         static_assert(sizeof (Message) == 32); // fixed and known message size
         static_assert((sizeof *this & (sizeof *this - 1)) == 0); // power of 2
 
-        HardwareStackFrame* psp = (HardwareStackFrame*) stackTop - 1;
+        HardwareStackFrame* psp = (HardwareStackFrame*) top - 1;
         psp->r[0] = (uint32_t) arg;
         psp->lr = (uint32_t) texit;
-        psp->pc = (uint32_t) func;
+        psp->pc = (uint32_t) proc;
         psp->psr = 0x01000000;
         pspSaved = (uint32_t*) psp - PSP_EXTRA;
         static const uint32_t dummyMaps [4] = {}; // two disabled regions
@@ -498,10 +505,6 @@ void systemTask (void* arg) {
     Task::vec[1].init((void*) task1[0], (void (*)(void*)) task1[1], 0);
 #if 0
 #include "test_tasks.h"
-#else
-    // set up task 8, also in flash memory, for some additional experiments
-    Task::vec[8].init((void*) MMIO32(0x08008000),
-                      (void (*)(void*)) MMIO32(0x08008004), 0);
 #endif
 
     // these requests are forwarded to other tasks
@@ -560,25 +563,20 @@ void systemTask (void* arg) {
                 break;
             }
 
-            case SYSCALL_texit:
-                printf("%d S: exit requested by %d\n", ticks, src);
-                isCall = false; // TODO waits forever, must clean up
+            case SYSCALL_read: {
+                int /*fd = args[0],*/ len = args[2];
+                uint8_t* ptr = (uint8_t*) args[1];
+                for (int i = 0; i < len; ++i)
+                    ptr[i] = console.getc();
+                reply = len;
                 break;
+            }
 
             case SYSCALL_write: {
                 int /*fd = args[0],*/ len = args[2];
                 uint8_t const* ptr = (uint8_t const*) args[1];
                 for (int i = 0; i < len; ++i)
                     console.putc(ptr[i]);
-                reply = len;
-                break;
-            }
-
-            case SYSCALL_read: {
-                int /*fd = args[0],*/ len = args[2];
-                uint8_t* ptr = (uint8_t*) args[1];
-                for (int i = 0; i < len; ++i)
-                    ptr[i] = console.getc();
                 reply = len;
                 break;
             }
@@ -604,6 +602,35 @@ void systemTask (void* arg) {
                 reply = 0;
                 break;
             }
+
+            case SYSCALL_tfork: {
+                void* top = (void*) args[0];
+                void (*proc)(void*) = (void (*)(void*)) args[1];
+                void* arg = (void*) args[2];
+                reply = Task::findSlot();
+                printf("%d S: fork by %d => %d sp %08x pc %08x arg %08x\n",
+                        ticks, src, reply, top, proc, arg);
+                if (reply >= 0)
+                    Task::vec[reply].init(top, proc, arg);
+                break;
+            }
+
+            case SYSCALL_twait: {
+                int arg = args[0];
+                printf("%d S: twait by %d arg %d\n", ticks, src, arg);
+                isCall = false; // don't send a reply, this task has ended
+                // TODO append to finished queue of task it's waiting on?
+                break;
+            }
+
+            case SYSCALL_texit: {
+                int arg = args[0];
+                printf("%d S: texit by %d arg %d\n", ticks, src, arg);
+                isCall = false; // don't send a reply, this task has ended
+                // TODO resume waiting tasks and release the Task for re-use
+                break;
+            }
+
         }
 
         // unblock the originating task if it's waiting
