@@ -8,7 +8,7 @@ enum {
     //SYSCALL_ipcPass,
     SYSCALL_noop,
     SYSCALL_demo,
-    SYSCALL_exit_, // name clash
+    SYSCALL_texit,
     SYSCALL_gpio,
     SYSCALL_write,
     SYSCALL_read,
@@ -37,7 +37,7 @@ SYSCALL_STUB(ipcRecv, (Message* msg))
 //SYSCALL_STUB(ipcPass, (int dst, Message* msg))
 SYSCALL_STUB(noop, (void))
 SYSCALL_STUB(demo, (int a, int b, int c, int d))
-SYSCALL_STUB(exit_, (int e))
+SYSCALL_STUB(texit, (int e))
 SYSCALL_STUB(gpio, (int gpioPin, int gpioCmd))
 SYSCALL_STUB(write, (int fd, void const* ptr, int len))
 SYSCALL_STUB(read, (int fd, void* ptr, int len))

@@ -171,7 +171,7 @@ typedef int Message [8];
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Tasks and task management.
 
-extern "C" int exit_ (int); // forward declaration XXX yuck
+extern "C" int texit (int); // forward declaration XXX yuck
 
 class Task {
 public:
@@ -199,7 +199,7 @@ public:
 
         HardwareStackFrame* psp = (HardwareStackFrame*) stackTop - 1;
         psp->r[0] = (uint32_t) arg;
-        psp->lr = (uint32_t) exit_;
+        psp->lr = (uint32_t) texit;
         psp->pc = (uint32_t) func;
         psp->psr = 0x01000000;
         pspSaved = (uint32_t*) psp - PSP_EXTRA;
@@ -560,7 +560,7 @@ void systemTask (void* arg) {
                 break;
             }
 
-            case SYSCALL_exit_:
+            case SYSCALL_texit:
                 printf("%d S: exit requested by %d\n", ticks, src);
                 isCall = false; // TODO waits forever, must clean up
                 break;
