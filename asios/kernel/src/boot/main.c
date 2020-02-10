@@ -6,7 +6,7 @@ int main () {
         write(1, "demo??\n", 7);
 
     // fork a new task, also in flash memory, for some additional experiments
-    int* task = (int*) 0x08008000;
+    int* task = (int*) 0x0800C000;
     
     return twait(tfork((void*) task[0], (void (*)(void*)) task[1], 0));
 }

@@ -6,6 +6,7 @@
 #include "macros.h"
 
 // cat boot.com bdos22.com bios.com | xxd -i >../common-z80/rom-cpm.h
+// XXX note that 0x00's at end must be stripped to fit demo app in 16k flash!
 const uint8_t rom [] = {
 #include "rom-cpm.h"
 };
@@ -56,6 +57,13 @@ void systemCall (Context *ctx, int req, uint16_t pc) {
             break;
         }
 
+        case 100: { // run a host task, i.e. escape out of The Matrix!
+            int* task = (int*) (CCMEM + DE);
+            // fork task and wait for its completion before resuming Z80 mode
+            twait(tfork((void*) task[0], (void (*)(void*)) task[1], 0));
+            break;
+        }
+
         default:
             write(1, "\n*** sysreq? ***\n", 17);
             texit(req);
@@ -64,8 +72,8 @@ void systemCall (Context *ctx, int req, uint16_t pc) {
 
 int main (void) {
     //write(1, "demo:\n", 6);
-    if (demo(44,33,22,11) != 44 + 33 + 22 + 11)
-        write(1, "demo?\n", 6);
+    //if (demo(44,33,22,11) != 44 + 33 + 22 + 11)
+    //    write(1, "demo?\n", 6);
 
     // emulated rom bootstrap, loads first disk sector to 0x0000
     diskio(0, 0, CCMEM, 1);
