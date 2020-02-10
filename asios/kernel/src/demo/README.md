@@ -18,26 +18,26 @@ The kernel starts off running its built-in special _system task_ (task #0),
 which in turn launches a _boot task_ (as task #1). Right now, the boot task does
 very little: launch yet another task, which is this "demo" emulator, and exit.
 
-All of these task run from flash memory, but have been independently compiled.
-Through a careful choice of flash and ram areas, they can all run side-by-side
+All these tasks run from flash memory, but have been independently compiled.
+Through a careful choice of flash and RAM areas, they can all run side-by-side
 without any issues (the MPU has not yet been enabled, i.e. all tasks run in a
 common full-address region, in unprivileged mode).
 
 The Z80 emulator uses system calls to perform console- and disk I/O. It also has
-one very special "escape out of The Matrix" option, which will launch a new
+one very special _escape out of "The Matrix"_ option, which will launch a new
 task, running either from emulated Z80 program space, or from flash or RAM
 located outside of the emulator. As long as this task runs, the Z80 emulator
 will be blocked. Once it exits, Z80 emulation resumes where it left off.
 
 So there are in essence two completely separate processor views of the world in
-this setup:
+this curious little setup:
 
 * the ARM Cortex-M4, running a microkernel with transparent multi-tasking
 * a task with emulates a single Z80 CPU with 64k of RAM and a virtual disk
 
 Apart from the special escape mode just described, code running inside the Z80
 emulator has no awareness of its larger context, i.e. the multi-tasking
-microkernel which orchestrates everything running on the "real" ARM Cortex-M4.
+microkernel which orchestrates everything and runs on the "real" ARM Cortex-M4.
 
 ## Memory layout
 
@@ -50,7 +50,7 @@ Unused:                  FLASH 0x08000C000 (16k)   RAM 0x2001C000 (3k)
 
 The remaining flash memory (64k+3x128k or 64+7x128k, for F407xE resp. F407xG
 µCs) is used for emulating one or more virtual disk drives (at least one is
-required for CP/M).
+needed for CP/M).
 
 There are two additional RAM areas in all STM32F407xx µCs:
 
@@ -59,9 +59,9 @@ There are two additional RAM areas in all STM32F407xx µCs:
 
 ## What next?
 
-The end effect is that on startup, there's a little _retro-computing_
-environment, sufficient to upload "programs" to the virtual disk drive, and
-to launch them interactively.
+The end effect of all this is that on startup, there's now a little _Z80
+retro-computing_ environment, sufficient to upload "programs" to the virtual
+disk drive, and to launch them interactively.
 
 Some programs will consist 100% of Z80 code and run happily in this emulated
 context.  Others can now start off with a little Z80-code "preamble", followed
