@@ -618,7 +618,7 @@ void systemTask (void* arg) {
             case SYSCALL_twait: {
                 int arg = args[0];
                 printf("%d S: twait by %d arg %d\n", ticks, src, arg);
-                isCall = false; // don't send a reply, this task has ended
+                isCall = false; // don't send a reply until the wait is over
                 // TODO append to finished queue of task it's waiting on?
                 break;
             }

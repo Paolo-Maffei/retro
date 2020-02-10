@@ -33,21 +33,26 @@ typedef int Message [8];
     { asm volatile ("svc %0; bx lr" :: "i" (SYSCALL_ ## name)); }
 #endif
 
-// these are all the system call stubs
+// these are all the system call stubs, grouped by function
+
+// IPC
 SYSCALL_STUB(ipcSend, (int dst, Message* msg))
 SYSCALL_STUB(ipcCall, (int dst, Message* msg))
 SYSCALL_STUB(ipcRecv, (Message* msg))
 //SYSCALL_STUB(ipcPass, (int dst, Message* msg))
 
+// tests, trials, and other loose ends
 SYSCALL_STUB(noop, (void))
 SYSCALL_STUB(demo, (int a, int b, int c, int d))
 SYSCALL_STUB(gpio, (int gpioPin, int gpioCmd))
 
+// device I/O
 SYSCALL_STUB(write, (int fd, void const* ptr, int len))
 SYSCALL_STUB(read, (int fd, void* ptr, int len))
 SYSCALL_STUB(ioctl, (int fd, int req, ...))
 SYSCALL_STUB(diskio, (int rw, int pos, void* buf, int cnt))
 
+// task management
 SYSCALL_STUB(tfork, (void* top, void (*proc)(void*), void* arg))
 SYSCALL_STUB(twait, (int id))
 SYSCALL_STUB(texit, (int e))

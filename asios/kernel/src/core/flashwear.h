@@ -5,7 +5,7 @@ class FlashWear {
     static constexpr int SECLEN = 128;
     static constexpr int NUM_MODS = 500;
     static constexpr int SEC_PER_SEG = 1024;
-    static constexpr int SEGSUSED = 2; // plus one spare
+    static constexpr int SEGSUSED = 6; // plus one spare
 
     typedef struct {
         uint16_t map [NUM_MODS];

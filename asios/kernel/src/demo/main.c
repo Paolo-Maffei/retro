@@ -58,11 +58,11 @@ void systemCall (Context *ctx, int req, uint16_t pc) {
 
         default:
             write(1, "\n*** sysreq? ***\n", 17);
-            while (1) {}
+            texit(req);
     }
 }
 
-int main() {
+int main (void) {
     //write(1, "demo:\n", 6);
     if (demo(44,33,22,11) != 44 + 33 + 22 + 11)
         write(1, "demo?\n", 6);
@@ -96,5 +96,5 @@ int main() {
         Z80Emulate(&context.state, 2000000, &context);
     while (!context.done);
 
-    while (1) {}
+    return 0;
 }
