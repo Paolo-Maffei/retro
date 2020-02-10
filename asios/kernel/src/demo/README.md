@@ -72,7 +72,7 @@ this code as "native ARM tasks", for (and managed by) the microkernel.
 There is no protection at this point, so crashes, freezes, faults, and panics
 are most likely. But this CP/M based setup creates a framework to work out all
 the kinks, and to grow the microkernel further. At some point, a more
-spohisticated shell could be added, making this CP/M setup obsolete - other than
+sophisticated shell could be added, making this CP/M setup obsolete - other than
 for running some old "8-bit retro" code from the previous century, that is!
 
 -jcw, 2020-02-10
