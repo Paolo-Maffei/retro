@@ -315,8 +315,8 @@ private:
 
     State state () const {
         return pspSaved == 0 ? Unused :     // task is not in use
-            blocking == this ? Blocked :    // has to be resumed explicitly
-                request != 0 ? SysCall :    // in system call
+            blocking == this ? Blocked :    // needs an explicit resume
+                request != 0 ? SysCall :    // waiting in system call
                     blocking ? Waiting :    // waiting on another task
           this != &current() ? Runnable :   // will run when scheduled
                                Active;      // currently running
