@@ -24,10 +24,10 @@ without any issues (the MPU has not yet been enabled, i.e. all tasks run in a
 common full-address region, in unprivileged mode).
 
 The Z80 emulator uses system calls to perform console- and disk I/O. It also has
-one very special _escape out of "The Matrix"_ option, which will launch a new
-task, running either from emulated Z80 program space, or from flash or RAM
-located outside of the emulator. As long as this task runs, the Z80 emulator
-will be blocked. Once it exits, Z80 emulation resumes where it left off.
+one very special _"escape out of The Matrix"_ option, which will launch a new
+task, running either from emulated Z80 program space or from flash / RAM located
+outside of the emulator. As long as this task runs, the Z80 emulator will be
+blocked. Once the task exits, Z80 emulation resumes where it left off.
 
 So there are in essence two completely separate processor views of the world in
 this curious little setup:
@@ -48,11 +48,12 @@ Demo/z80emu task (#2):   FLASH 0x080008000 (16k)   RAM 0x2001CC00 (1k)
 Unused:                  FLASH 0x08000C000 (16k)   RAM 0x2001C000 (3k)
 ```
 
-The remaining flash memory (64k+3x128k or 64+7x128k, for F407xE resp. F407xG
-µCs) is used for emulating one or more virtual disk drives (at least one is
-needed for CP/M).
+The remaining flash memory (64k plus 3x or 7x 128k, for F407xE resp. F407xG µCs)
+is used for emulating one or more virtual disk drives (at least one is needed
+for CP/M). The code includes wear leveling logic which turns this into 256k
+resp. 768k of r/w "disk" space with 128-byte "sectors").
 
-There are two additional RAM areas in all STM32F407xx µCs:
+There are two additional RAM areas in STM32F407xx µCs:
 
 * 64k CCM RAM is used by z80emu as emulated Z80 program memory
 * 112k RAM (SRAM1) is unused so far, and intended for other RAM-based tasks
