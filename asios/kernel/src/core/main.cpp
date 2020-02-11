@@ -145,7 +145,8 @@ T grab (T& x) {
 // append an item to the end of a list
 template< typename T >
 void listAppend (T*& list, T& item) {
-    item.next = 0; // just to be safe
+    if (item.next)
+        panic("item already in list");
     while (list)
         list = list->next;
     list = &item;
@@ -296,7 +297,7 @@ public:
     void dump () const {
         if (pspSaved) {
             printf("  [%03x] %2d: %c%c sp %08x", (uint32_t) this & 0xFFF,
-                    this - vec, " *<~"[type], "UBSWRA"[state()], pspSaved);
+                    this - vec, " *<~"[type], "USWRA"[state()], pspSaved);
             printf(" blk %2d pq %08x fq %08x buf %08x req %d\n",
                     blocking == 0 ? -1 : blocking->index(),
                     pendingQueue, finishQueue, message, request);
@@ -311,12 +312,11 @@ public:
 private:
     uint32_t index () const { return this - vec; }
 
-    enum State { Unused, Blocked, SysCall, Waiting, Runnable, Active };
+    enum State { Unused, Suspended, Waiting, Runnable, Active };
 
     State state () const {
         return pspSaved == 0 ? Unused :     // task is not in use
-            blocking == this ? Blocked :    // needs an explicit resume
-                request != 0 ? SysCall :    // waiting in system call
+            blocking == this ? Suspended :  // has to be resumed explicitly
                     blocking ? Waiting :    // waiting on another task
           this != &current() ? Runnable :   // will run when scheduled
                                Active;      // currently running
