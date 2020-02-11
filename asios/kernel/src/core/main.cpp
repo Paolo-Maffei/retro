@@ -25,7 +25,7 @@ struct DWT {
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Console device and exception handler debugging.
 
-UartBufDev< PinA<9>, PinA<10>, 2 > console;
+UartBufDev< PinA<9>, PinA<10>, 150 > console;
 
 int printf (char const* fmt, ...) {
     va_list ap; va_start(ap, fmt); veprintf(console.putc, fmt, ap); va_end(ap);
