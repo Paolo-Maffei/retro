@@ -1,0 +1,27 @@
+; Cold bootstrap for z80 emulator
+
+VERS	equ 2
+
+CCP     equ 0E800h
+BIOS    equ CCP+1600h
+
+        org 0
+
+boot:	ld de,greet
+        in a,(3)        ; display greeting
+
+        ld a,0		; drive A
+        ld b,6*8        ; read CCP+BDOS+BIOS into memory (6k)
+        ld de,1         ; skip first sector on first track
+        ld hl,CCP       ; load address
+	in a,(4)        ; disk read request
+
+        jp BIOS         ; jump to bios cold start
+
+greet:  db 13,10,'[Retro Z80] ',0
+
+        ds 126-$	; so generated code is exactly 128 bytes
+        db VERS
+	db BIOS/256
+
+        end
