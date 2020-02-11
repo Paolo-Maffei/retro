@@ -178,22 +178,23 @@ class Task {
 public:
     uint32_t* pspSaved; // MUST be first in task objects, see PendSV_Handler
     uint32_t* mpuMaps;  // MUST be second in task objects, see PendSV_Handler
-    Task* blocking;     // set while waiting, to task we're queued on, or self
     Message* message;   // set while recv or reply can take a new message
-    Task* pendingQueue; // tasks waiting for their call to be accepted
-    Task* finishQueue;  // tasks waiting for their call to be completed
+    // these task ptrs could be made indices, freeing 12b of 16b if <256 tasks
+    Task* blocking;     // set while waiting, to task we're queued on, or self
+    Task* incoming;     // tasks waiting for their call to be accepted
+    Task* inProgress;   // tasks waiting for their call to be completed
     Task* next;         // used in waiting tasks, i.e. when on some linked list
 
     enum { Early, App, Server, Driver }; // type of task
     uint8_t type :2;    // set once the first SVC call is made
-    uint8_t request;    // request number for last system call
+    uint8_t request;    // request number of current system call
 
     uint8_t spare[2];   // pad the total task size to 32 bytes
 
     static constexpr int MAX_TASKS = 25;
     static Task vec [MAX_TASKS];
 
-    static int findSlot () {
+    static int findUnused () {
         for (int i = 0; i < MAX_TASKS; ++i)
             if (vec[i].state() == Unused)
                 return i;
@@ -202,7 +203,7 @@ public:
 
     void init (void* top, void (*proc)(void*), void* arg) {
         // use the C++11 compiler to verify some design choices
-        static_assert(sizeof (Message) == 32); // fixed and known message size
+        static_assert(sizeof (Message) == 32); // fixed/known msg buffer size
         static_assert((sizeof *this & (sizeof *this - 1)) == 0); // power of 2
 
         HardwareStackFrame* psp = (HardwareStackFrame*) top - 1;
@@ -219,8 +220,6 @@ public:
         return *(HardwareStackFrame*) (pspSaved + PSP_EXTRA);
     }
 
-    static Task& current () { return *(Task*) pspSw.curr; }
-
     static Task* nextRunnable () {
         Task* tp = &current();
         do
@@ -231,66 +230,61 @@ public:
     }
 
     // try to deliver a message to this task
-    int deliver (Task& sender, Message* msg) {
+    int deliver (Task& from, Message* msg) {
         //printf("S: deliver %08x %d => %d req %d\n",
-        //    msg, sender.index(), index(), sender.request);
+        //    msg, from.index(), index(), from.request);
         if (blocking && blocking != this) // am I waiting for a reply?
-            if (!listRemove(blocking->finishQueue, *this))
+            if (!listRemove(blocking->inProgress, *this))
                 return -1; // waiting on something else, reject this delivery
 
-        Message* buf = grab(message);
-        if (buf == 0) // is this task ready to receive a message?
+        if (message == 0) // is this task ready to receive a message?
             return -1; // nope, can't deliver this message
 
-        if (buf == (Message*) &context()) // was this a system call?
-            resume(0); // let the system call return
-        else { // it was a receive, blocked on listening
-            memcpy(buf, msg, sizeof *msg); // copy message to destination
-            resume(sender.index());
+        Message* buf = grab(message);
+        if (buf != (Message*) &context()) { // if it was a receive, not syscall
+            memcpy(buf, msg, sizeof *msg);  // copy message to destination
+            context().r[0] = from.index();  // return sender's task id
         }
+        resume();
         return 0; // successful delivery
     }
 
     // deal with an incoming message which expects a reply
     int replyTo (Message* msg) {
-        Task& sender = current();
+        Task& from = current();
         //printf("S:   reply %08x %d => %d req %d\n",
-        //    msg, sender.index(), index(), sender.request);
-        int e = deliver(sender, msg);
-        //if (e < 0 && this == vec) // oops, the system task was not ready
-        //    printf("S: not ready for req #%d from %d\n",
-        //            sender.request, sender.index());
-
+        //    msg, from.index(), index(), from.request);
+        int e = deliver(from, msg);
         // either try delivery again later, or wait for reply
-        listAppend(e < 0 ? pendingQueue : finishQueue, sender);
-        return sender.suspend(this, msg);
+        listAppend(e < 0 ? incoming : inProgress, from);
+        return from.suspend(this, msg);
     }
 
     // listen for incoming messages, block each sender while handling calls
     int listen (Message* msg) {
         //printf("S:  listen %08x   at %d\n", msg, index());
-        if (pendingQueue == 0)
+        if (incoming == 0)
             return suspend(this, msg);
 
-        Task& sender = *pendingQueue;
+        Task& from = *incoming;
         //printf("S:     got %08x %d => %d req %d\n",
-        //    sender.message, sender.index(), index(), sender.request);
-        pendingQueue = grab(pendingQueue->next);
-        listAppend(finishQueue, sender);
-        memcpy(msg, sender.message, sizeof *msg); // copy msg to this task
-        return sender.index();
+        //    from.message, from.index(), index(), from.request);
+        incoming = grab(incoming->next);
+        listAppend(inProgress, from);
+        memcpy(msg, from.message, sizeof *msg); // copy msg to this task
+        return from.index();
     }
 
     // forward current call to this destination
-    bool forward (Task& sender, Message* msg) {
-        if (!listRemove(current().finishQueue, sender))
-            return false;
-
-        sender.blocking = 0; // TODO figure this out, also request = 0 ?
-        memcpy(sender.message, msg, sizeof *msg); // copy request back to sender
-        int e = deliver(sender, sender.message); // re-deliver
-        listAppend(e < 0 ? pendingQueue : finishQueue, sender);
-        return true;
+    bool forward (Task& from, Message* msg) {
+        bool found = listRemove(current().inProgress, from);
+        if (found) {
+            from.blocking = 0; // TODO figure this out, also request = 0 ?
+            memcpy(from.message, msg, sizeof *msg); // copy req back to sender
+            int e = deliver(from, from.message); // re-deliver
+            listAppend(e < 0 ? incoming : inProgress, from);
+        }
+        return found;
     }
 
     // a crude task dump for basic debugging, using console & printf
@@ -300,7 +294,7 @@ public:
                     this - vec, " *<~"[type], "USWRA"[state()], pspSaved);
             printf(" blk %2d pq %08x fq %08x buf %08x req %d\n",
                     blocking == 0 ? -1 : blocking->index(),
-                    pendingQueue, finishQueue, message, request);
+                    incoming, inProgress, message, request);
         }
     }
 
@@ -310,13 +304,15 @@ public:
     }
 
 private:
+    static Task& current () { return *(Task*) pspSw.curr; }
+
     uint32_t index () const { return this - vec; }
 
     enum State { Unused, Suspended, Waiting, Runnable, Active };
 
     State state () const {
         return pspSaved == 0 ? Unused :     // task is not in use
-            blocking == this ? Suspended :  // has to be resumed explicitly
+            blocking == this ? Suspended :  // needs an explicit resume
                     blocking ? Waiting :    // waiting on another task
           this != &current() ? Runnable :   // will run when scheduled
                                Active;      // currently running
@@ -333,11 +329,10 @@ private:
 
         blocking = reason;
         message = msg ? msg : (Message*) &context();
-        return -1; // suspended, this result will be adjusted in resume()
+        return -1; // suspended, this result will be adjusted when resuming
     }
 
-    void resume (int result) {
-        context().r[0] = result; // save result inside calling context
+    void resume () {
         request = 0;
         blocking = 0; // then allow it to run again
     }
@@ -375,10 +370,10 @@ void SVC_Handler () {
     // note that *pspSw.curr is not authoritative, h/w uses the real psp
     // now all valid task entries have similar stack ptrs for kernel use
     *pspSw.curr = (uint32_t*) sfp - PSP_EXTRA;
+    Task& t = *(Task*) pspSw.curr;
 
     // fully-automated task categorisation: the first SVC request made by a
     // task will configure its type, and therefore its system permissions
-    Task& t = Task::current();
     if (t.type == Task::Early)
         switch (req) {
             case SYSCALL_ipcSend:                        break; // no change
@@ -396,7 +391,7 @@ void SVC_Handler () {
             int dst = sfp->r[0];
             Message* msg = (Message*) sfp->r[1];
             // ... validate dst and msg
-            sfp->r[0] = Task::vec[dst].deliver(Task::current(), msg);
+            sfp->r[0] = Task::vec[dst].deliver(t, msg);
             break;
         }
 
@@ -413,17 +408,17 @@ void SVC_Handler () {
         case SYSCALL_ipcRecv: {
             Message* msg = (Message*) sfp->r[0];
             // ... validate msg
-            sfp->r[0] = Task::current().listen(msg);
+            sfp->r[0] = t.listen(msg);
             break;
         }
 
         //case SYSCALL_ipcPass: do_ipcPass(sfp); break;
 
         // wrap everything else into a message-less ipcCall to task #0
-        default: {
-            Task::current().request = req; // save SVC number in task object
-            (void) Task::vec[0].replyTo(0); // no message buf XXX explain void
-        }
+        default:
+            t.request = req; // save SVC number in task object
+            (void) Task::vec[0].replyTo(0); // no msg buffer XXX explain void
+            break;
     }
 }
 
@@ -495,7 +490,7 @@ void systemTask (void* arg) {
     irqVec->systick = []() {
         ++ticks;
         if (yield || ticks % 20 == 0) // switch tasks every 20 ms
-            if (&Task::current() != Task::vec) // unless in system task
+            if ((Task*) pspSw.curr != Task::vec) // unless in system task
                 changeTask(Task::nextRunnable());
         yield = false;
     };
@@ -517,10 +512,10 @@ void systemTask (void* arg) {
         int src = ipcRecv(&sysMsg);
 
         // examine the incoming request, calls will need a reply
-        Task& sender = Task::vec[src];
-        int req = sender.request;
-        uint32_t* args = sender.context().r;
-        bool isCall = sender.blocking == Task::vec;
+        Task& from = Task::vec[src];
+        int req = from.request;
+        uint32_t* args = from.context().r;
+        bool isCall = from.blocking == Task::vec;
         int reply = -1; // the default reply is failure
 
         // decide what to do with this request
@@ -533,8 +528,8 @@ void systemTask (void* arg) {
             if (isCall) {
                 //printf("S: rerouting req #%d from %d to %d\n",
                 //        req, src, sr.task);
-                sender.request = sr.num; // adjust request code before forward
-                bool f = Task::vec[sr.task].forward(sender, &sysMsg);
+                from.request = sr.num; // adjust request code before forward
+                bool f = Task::vec[sr.task].forward(from, &sysMsg);
                 if (!f)
                     printf("S: forward failed, req #%d from %d to %d\n",
                             req, src, sr.task);
@@ -609,7 +604,7 @@ void systemTask (void* arg) {
                 void* top = (void*) args[0];
                 void (*proc)(void*) = (void (*)(void*)) args[1];
                 void* arg = (void*) args[2];
-                reply = Task::findSlot();
+                reply = Task::findUnused();
                 printf("%d S: tfork by %d => %d sp %08x pc %08x arg %d\n",
                         ticks, src, reply, top, proc, arg);
                 if (reply >= 0)
@@ -671,7 +666,6 @@ int main () {
 /*
 text 08000010,4744b data 2001E000,0b bss E000,2992b sp EBB0,4176b msp FC00,1024b
 */
-
     irqVec = &VTableRam(); // this call can't be used in thread mode
 
     // initialize the very first task, and give it the vector of the second one
