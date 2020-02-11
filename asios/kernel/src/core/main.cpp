@@ -285,7 +285,7 @@ public:
         if (!listRemove(current().finishQueue, sender))
             return false;
 
-        sender.blocking = 0;
+        sender.blocking = 0; // TODO figure this out, also request = 0 ?
         memcpy(sender.message, msg, sizeof *msg); // copy request back to sender
         int e = deliver(sender, sender.message); // re-deliver
         listAppend(e < 0 ? pendingQueue : finishQueue, sender);
@@ -296,7 +296,7 @@ public:
     void dump () const {
         if (pspSaved) {
             printf("  [%03x] %2d: %c%c sp %08x", (uint32_t) this & 0xFFF,
-                    this - vec, " *<~"[type], "USWRA"[state()], pspSaved);
+                    this - vec, " *<~"[type], "UBSWRA"[state()], pspSaved);
             printf(" blk %2d pq %08x fq %08x buf %08x req %d\n",
                     blocking == 0 ? -1 : blocking->index(),
                     pendingQueue, finishQueue, message, request);
@@ -311,11 +311,12 @@ public:
 private:
     uint32_t index () const { return this - vec; }
 
-    enum State { Unused, Suspended, Waiting, Runnable, Active };
+    enum State { Unused, Blocked, SysCall, Waiting, Runnable, Active };
 
     State state () const {
         return pspSaved == 0 ? Unused :     // task is not in use
-            blocking == this ? Suspended :  // has to be resumed explicitly
+            blocking == this ? Blocked :    // has to be resumed explicitly
+                request != 0 ? SysCall :    // in system call
                     blocking ? Waiting :    // waiting on another task
           this != &current() ? Runnable :   // will run when scheduled
                                Active;      // currently running
@@ -337,6 +338,7 @@ private:
 
     void resume (int result) {
         context().r[0] = result; // save result inside calling context
+        request = 0;
         blocking = 0; // then allow it to run again
     }
 };
