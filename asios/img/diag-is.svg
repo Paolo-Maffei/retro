@@ -1,0 +1,65 @@
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+ "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1"
+ width="600px" height="134px"
+ viewBox="0 0 600 134"
+ xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges"
+ stroke-width="1" text-rendering="geometricPrecision">
+<polygon fill="white" points="76,7 122,7 122,16 76,16"/>
+<text x="100" y="16" textLength="45" font-family="Helvetica" font-size="12" fill="black" text-anchor="middle">
+
+My Task
+</text>
+<polygon fill="white" points="274,7 324,7 324,16 274,16"/>
+<text x="300" y="16" textLength="49" font-family="Helvetica" font-size="12" fill="black" text-anchor="middle">
+
+SVC IRQ
+</text>
+<polygon fill="white" points="468,7 530,7 530,16 468,16"/>
+<text x="500" y="16" textLength="61" font-family="Helvetica" font-size="12" fill="black" text-anchor="middle">
+
+Some Task
+</text>
+<line x1="100" y1="22" x2="100" y2="50" stroke="black"/>
+<line x1="300" y1="22" x2="300" y2="50" stroke="black"/>
+<line x1="500" y1="22" x2="500" y2="50" stroke="black"/>
+<line x1="100" y1="33" x2="300" y2="33" stroke="black"/>
+<polygon fill="black" points="300,33 290,39 290,27"/>
+<polygon fill="white" points="178,23 221,23 221,32 178,32"/>
+<text x="179" y="32" textLength="41" font-family="Helvetica" font-size="12" fill="black">
+SVC #0
+</text>
+<line x1="100" y1="50" x2="100" y2="78" stroke="black"/>
+<line x1="300" y1="50" x2="300" y2="78" stroke="black"/>
+<line x1="500" y1="50" x2="500" y2="78" stroke="black"/>
+<line x1="300" y1="61" x2="500" y2="61" stroke="black"/>
+<polygon fill="black" points="500,61 490,67 490,55"/>
+<polygon fill="white" points="373,51 426,51 426,60 373,60"/>
+<text x="374" y="60" textLength="51" font-family="Helvetica" font-size="12" fill="black">
+IPC Send
+</text>
+<line x1="100" y1="78" x2="100" y2="106" stroke="black"/>
+<line x1="300" y1="78" x2="300" y2="106" stroke="black"/>
+<line x1="500" y1="78" x2="500" y2="106" stroke="black"/>
+<polygon fill="white" points="408,78 592,78 592,100 408,100"/>
+<line x1="408" y1="78" x2="592" y2="78" stroke="black"/>
+<line x1="408" y1="100" x2="592" y2="100" stroke="black"/>
+<line x1="408" y1="78" x2="408" y2="100" stroke="black"/>
+<line x1="592" y1="78" x2="592" y2="100" stroke="black"/>
+<polygon fill="white" points="473,85 526,85 526,94 473,94"/>
+<text x="474" y="94" textLength="51" font-family="Helvetica" font-size="12" fill="black">
+copy msg
+</text>
+<line x1="100" y1="106" x2="100" y2="134" stroke="black"/>
+<line x1="300" y1="106" x2="300" y2="134" stroke="black"/>
+<line x1="500" y1="106" x2="500" y2="134" stroke="black"/>
+<line x1="300" y1="117" x2="100" y2="117" stroke="black" stroke-dasharray="2,2"/>
+<polygon fill="black" points="100,117 110,123 110,111"/>
+<polygon fill="white" points="182,107 216,107 216,116 182,116"/>
+<text x="183" y="116" textLength="32" font-family="Helvetica" font-size="12" fill="black">
+ok y/n
+</text>
+<line x1="100" y1="128" x2="100" y2="134" stroke="black"/>
+<line x1="300" y1="128" x2="300" y2="134" stroke="black"/>
+<line x1="500" y1="128" x2="500" y2="134" stroke="black"/>
+</svg>

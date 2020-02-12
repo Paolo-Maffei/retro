@@ -1,0 +1,11 @@
+msc {
+t [label="My Task"],
+v [label="SVC IRQ"],
+o [label="Some Task"];
+
+#--- [label="IPC Send"];
+t=>v [ label = "SVC #0" ];
+v=>o [ label = "IPC Send" ];
+o box o [ label = "copy msg" ];
+v>>t [ label = "ok y/n" ];
+}

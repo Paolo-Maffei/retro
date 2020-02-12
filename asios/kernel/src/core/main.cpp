@@ -256,6 +256,8 @@ public:
     // forward current call to this destination
     bool forward (Task& from, Message* msg) {
         bool found = from.removeFrom(current().inProgress);
+        //printf("S: forward %08x %d => %d req %d found %d\n",
+        //    msg, from.index(), index(), from.request, found);
         if (found) {
             from.blocking = 0; // TODO figure this out, also request = 0 ?
             memcpy(from.message, msg, sizeof *msg); // copy req back to sender

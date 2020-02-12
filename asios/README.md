@@ -1,8 +1,63 @@
-# Some notes
+**(TBD)**
 
-> [... work in progress ...]
+---
+# Message passing protocol
 
-## Applications in memory
+The kernel is based on three primitives: **IPC Send**, **IPC Call**, and **IPC
+Recv**.
+
+## IPC Send
+
+Send a message to a specified task, and continue without waiting. The request
+will fail immediately if the destination is not currently ready to receive
+messages:
+
+![](img/diag-is.svg)
+
+## IPC Call
+
+Send a message to a specified task and wait until there is a reply message:
+
+![](img/diag-ic.svg)
+
+## System Call
+
+System calls are transformed into IPC Calls to the System Task (Task #0). They
+only transfer argument lists and reply codes, not complete messages:
+
+![](img/diag-sc.svg)
+
+## IPC Recv + Send
+
+When a task does an IPC Recv, it blocks until a message arrives via IPC Send:
+
+![](img/diag-irs.svg)
+
+## IPC Send + Recv
+
+If the IPC Send is done before the destination is receiving, the send will fail
+and the destination will then wait for a next message. Sends are _asynchronous_:
+
+![](img/diag-isr.svg)
+
+## IPC Recv + Call
+
+With an IPC Call, the exchange consists of a request and a reply message, and
+everything will block to make this "rendezvous" happen in the right order:
+
+![](img/diag-irc.svg)
+
+## IPC Call + Recv
+
+When calls are made before the destination is ready to receive, they will be
+queued at the receiving end and picked up as soon as IPC Recv requests are made.
+Calls are _synchronous_:
+
+![](img/diag-icr.svg)
+
+# Memory use and tasks
+
+### Applications in memory
 
 A traditional RAM-based application has the following memory layout:
 
@@ -19,7 +74,7 @@ What's of most interest here, is the _call stack_, which grows down, towards
 lower memory addresses. The stack area contains nested function calls and their
 local variables, in the form of _stack frames_.
 
-## Interrupts and system calls
+### Interrupts and system calls
 
 With a multi-tasking kernel, everything becomes a bit more complicated. There
 will now be multiple _tasks_ in memory, each with their own data, heap, and
@@ -81,7 +136,7 @@ restored, and processing resumes where it left off:
 
 The master stack is empty again, and the task stack is back to normal.
 
-## Context switches
+### Context switches
 
 So far, this has been a description of a single task being interrupted and then
 resuming.  Things change with multiple tasks as a little _bait-and-switch_ trick
@@ -111,7 +166,7 @@ brief moment while things are switched around that an unrelated hardware
 interrupt _could_ occur, but due to the details of how PendSV works, this does
 not cause any problems.
 
-## Tricky details
+### Tricky details
 
 The model presented so far is accurate, but glosses over a few tricky details.
 For one, note that interrupts can happen at any point in time, even during the

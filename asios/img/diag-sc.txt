@@ -1,0 +1,13 @@
+msc {
+t [label="My Task"],
+v [label="SVC IRQ"],
+y [label="System Task"];
+
+t=>v [ label = "SVC #N" ];
+v>>t [ label = "suspend" ];
+v=>y [ label = "IPC Call" ];
+y box y [ label = "copy & process args" ];
+y=>v [ label = "SVC #0" ];
+v=>t [ label = "IPC Send" ];
+v>>t [ label = "resume" ];
+}
