@@ -2,7 +2,7 @@
 
 int main () {
     //write(1, "boot:\n", 6);
-    if (demo(22,33,44,55) != 22 + 33 + 44 + 55)
+    if (demo(22,33,44,55) != 22+33+44+55)
         write(1, "demo??\n", 7);
 
     // fork a new task, also in flash memory, for some additional experiments
@@ -12,7 +12,7 @@ int main () {
 #if 0
     // test the "yield(ms)" timer
     for (char c = '1'; c <= '9'; ++c) {
-        yield(500);
+        yield(250);
         write(1, &c, 1);
     }
     write(1, "\n", 1);

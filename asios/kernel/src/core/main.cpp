@@ -455,7 +455,6 @@ void runPrivileged (void (*fun)()) {
 
 // go through all tasks and unblock those that are in yield() and have expired
 // this is called from the systick IRQ, but will never preempt an active SVC
-// note: pspSw.curr and Task::current() are valid, but curr->context() is not
 // returns true if any tasks have been made runnable
 bool resumeExpiredTasks () {
     bool woken = false;
@@ -495,19 +494,19 @@ void systemTask (void* arg) {
         MMIO8(0xE000ED1F) = 0xFF; // SHPR2->PRI_11 = 0xFF
 
         // also lower the priority of SysTicks so they won't interrupt SVCs and
-        // task switches + timeout wakeups don't interfere with active syscalls
+        // so task switches + timeout wakeups don't happen during syscalls
         MMIO8(0xE000ED23) = 0xFF; // SHPR3->PRI_15 = 0xFF
-
-        // TODO set up all MPU regions and enable the MPU's memory protection
     });
 
+    // periodic system tick, this never runs while SVC or other IRQs are active
+    // note: pspSw.curr & Task::current() are valid, but curr->context() isn't
     irqVec->systick = []() {
-        bool couldSwitch = ticks % 20 == 0; // it's time to preempt
+        bool couldSwitch = ++ticks % 32 == 0; // time to preempt, note the "++"
 
-        ++ticks;
         if ((int) (nextWakeup - ticks) < 0) // careful with overflow
             couldSwitch |= resumeExpiredTasks();
 
+        // TODO maybe the system task needs to raise its base priority instead?
         if (couldSwitch && (Task*) pspSw.curr != Task::vec)
             changeTask(Task::nextRunnable()); // don't preempt system task
     };
