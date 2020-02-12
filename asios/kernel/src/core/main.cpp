@@ -441,26 +441,6 @@ SysRoute routes [256]; // indexed by the SVC request code, i.e. 0..255
 
 volatile uint32_t nextWakeup;
 
-#if 1
-// just a quick hack to force a context switch on the next 1000 Hz clock tick
-// it causes a continous race of task switches, since each waiting task yields
-// ... but it does have the desired effect of wait_ms letting other tasks run
-// still some delays, as each running task in the cycle consumes a clock tick
-// note: changeTask can't be called from unprivileged code, i.e. thread mode
-//
-// TODO solution is to suspend delaying tasks so they don't eat up cpu cycles
-// but this needs some new code, to manage multiple timers and queues for them
-bool yieldNow;
-
-// use a different name to avoid clashing with JeeH's "wait_ms" version
-void msWait (uint32_t ms) {
-    uint32_t start = ticks;
-    while ((uint32_t) (ticks - start) < ms) {
-        yieldNow = true;
-        __asm("wfi");  // reduce power consumption
-    }
-}
-#endif
 //#define msWait yield
 
 VTable* irqVec;     // see below TODO this can be fixed in JeeH
@@ -476,22 +456,28 @@ void runPrivileged (void (*fun)()) {
 // go through all tasks and unblock those that are in yield() and have expired
 // this is called from the systick IRQ, but will never preempt an active SVC
 // note: pspSw.curr and Task::current() are valid, but curr->context() is not
-void resumeExpiredTasks () {
+// returns true if any tasks have been made runnable
+bool resumeExpiredTasks () {
+    bool woken = false;
+    int wakeup = 1<<30; // a really big value: over 12 days in milliseconds
+
     uint32_t now = ticks; // read volatile "ticks" counter once
-    int wakeup = 1<<30;
     for (int i = 0; i < Task::MAX_TASKS; ++i) {
         Task& t = Task::vec[i];
         if (t.request == SYSCALL_yield && t.blocking == &t) {
             // this is never the current active task, for which blocking == 0
             uint32_t timeout = t.context().r[1]; // i.e. the unused arg trick
             int msToGo = timeout - now;
-            if (msToGo <= 0)
+            if (msToGo <= 0) {
                 t.resume(); // this yield timer has expired
-            else if (msToGo < wakeup)
+                woken = true;
+            } else if (msToGo < wakeup)
                 wakeup = msToGo; // this is the best next wakeup time so far
         }
     }
-    nextWakeup = now + wakeup; // adjust the next expiration time
+
+    nextWakeup = now + wakeup; // adjust the next yield expiration time
+    return woken;
 }
 
 void systemTask (void* arg) {
@@ -516,13 +502,14 @@ void systemTask (void* arg) {
     });
 
     irqVec->systick = []() {
+        bool couldSwitch = ticks % 20 == 0; // it's time to preempt
+
         ++ticks;
         if ((int) (nextWakeup - ticks) < 0) // careful with overflow
-            resumeExpiredTasks();
-        if (yieldNow || ticks % 20 == 0) // switch tasks every 20 ms
-            if ((Task*) pspSw.curr != Task::vec) // unless in system task
-                changeTask(Task::nextRunnable());
-        yieldNow = false;
+            couldSwitch |= resumeExpiredTasks();
+
+        if (couldSwitch && (Task*) pspSw.curr != Task::vec)
+            changeTask(Task::nextRunnable()); // don't preempt system task
     };
 
     disk.init(); // TODO flashwear disk shouldn't be here

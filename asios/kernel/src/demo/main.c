@@ -71,6 +71,15 @@ void systemCall (Context *ctx, int req, uint16_t pc) {
 }
 
 int main (void) {
+#if 0
+    // test the "yield(ms)" timer
+    for (char c = 'a'; c <= 'z'; ++c) {
+        yield(200);
+        write(1, &c, 1);
+    }
+    write(1, "\n", 1);
+#endif
+
     //write(1, "demo:\n", 6);
     //if (demo(44,33,22,11) != 44 + 33 + 22 + 11)
     //    write(1, "demo?\n", 6);

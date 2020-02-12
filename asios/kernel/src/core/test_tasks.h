@@ -5,14 +5,14 @@ alignas(8) static uint8_t stack_##num [stacksize]; \
 Task::vec[num].init(stack_##num + stacksize, [](void*) { body }, 0);
 
 DEFINE_TASK(2, 256,
-    msWait(1000);
+    yield(1000);
     printf("%d 2: start listening\n", ticks);
     while (true) {
         Message msg;
         int src = ipcRecv(&msg);
         printf("%d 2: received #%d from %d\n", ticks, msg[0], src);
         if (src == 4) {
-            msWait(50);
+            yield(50);
             msg[0] = -msg[0];
             printf("%d 2: about to reply #%d to %d\n", ticks, msg[0], src);
             int e = ipcSend(src, &msg);
@@ -26,7 +26,7 @@ DEFINE_TASK(3, 256,
     Message msg;
     msg[0] = 99;
     while (true) {
-        msWait(500);
+        yield(500);
         printf("%d 3: sending #%d\n", ticks, ++msg[0]);
 #if 1
         int e = ipcSend(2, &msg);
@@ -43,7 +43,7 @@ DEFINE_TASK(3, 256,
 #endif
         if (e != 0)
             printf("%d 3: send? %d\n", ticks, e);
-        msWait(1000);
+        yield(1000);
     }
 )
 
@@ -51,19 +51,19 @@ DEFINE_TASK(4, 256,
     Message msg;
     msg[0] = 250;
     while (true) {
-        msWait(2000);
+        yield(2000);
         printf("%d 4: calling #%d\n", ticks, ++msg[0]);
         int e = ipcCall(2, &msg);
         printf("%d 4: result #%d status %d\n", ticks, msg[0], e);
-        msWait(2000);
+        yield(2000);
     }
 )
 
 DEFINE_TASK(5, 256,
-    msWait(300);
+    yield(300);
     for (int i = 0; i < 3; ++i) {
         Task::dumpAll();
-        msWait(3210);
+        yield(3210);
     }
     printf("%d 5: about to exit\n", ticks);
 )
@@ -75,9 +75,9 @@ DEFINE_TASK(6, 256,
     while (true) {
         printf("%d\n", ticks);
         led2 = 0; // inverted logic
-        msWait(50);
+        yield(50);
         led2 = 1;
-        msWait(950);
+        yield(950);
         int n = demo(11, 22, 33, 44);
         if (n != 11 + 22 + 33 + 44)
             printf("%d n? %d\n", ticks, n);
@@ -116,9 +116,9 @@ DEFINE_TASK(7, 256,
     led3.mode(Pinmode::out);
     while (true) {
         led3 = 0; // inverted logic
-        msWait(140);
+        yield(140);
         led3 = 1;
-        msWait(140);
+        yield(140);
     }
 )
 #endif
