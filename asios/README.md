@@ -16,7 +16,9 @@ messages:
 
 ## IPC Call
 
-Send a message to a specified task and wait until there is a reply message:
+Send a message to a specified task and wait until there is a reply message via
+an IPC Send in the opposite direction. Since the call is still waiting, that
+send will always succeed:
 
 ![](img/diag-ic.svg)
 
@@ -36,7 +38,8 @@ When a task does an IPC Recv, it blocks until a message arrives via IPC Send:
 ## IPC Send + Recv
 
 If the IPC Send is done before the destination is receiving, the send will fail
-and the destination will then wait for a next message. Sends are _asynchronous_:
+and the destination will then wait for a next message. IPC sends are
+_asynchronous_:
 
 ![](img/diag-isr.svg)
 
@@ -50,8 +53,8 @@ everything will block to make this "rendezvous" happen in the right order:
 ## IPC Call + Recv
 
 When calls are made before the destination is ready to receive, they will be
-queued at the receiving end and picked up as soon as IPC Recv requests are made.
-Calls are _synchronous_:
+queued at the receiving end and picked up during the next IPC Recv requests.
+IPC Calls are _synchronous_:
 
 ![](img/diag-icr.svg)
 
