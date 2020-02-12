@@ -1,3 +1,7 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // System call handlers and dispatch vector. These always run in SVC context.
 // Changing the enum or argument list APIs below requires full recompilation.
@@ -17,6 +21,7 @@ enum {
     SYSCALL_diskio,
     SYSCALL_tfork,
     SYSCALL_twait,
+    SYSCALL_yield,
     SYSCALL_MAX
 };
 
@@ -56,3 +61,8 @@ SYSCALL_STUB(diskio, (int rw, int pos, void* buf, int cnt))
 SYSCALL_STUB(tfork, (void* top, void (*proc)(void*), void* arg))
 SYSCALL_STUB(twait, (int id))
 SYSCALL_STUB(texit, (int e))
+SYSCALL_STUB(yield, (int ms))
+
+#ifdef __cplusplus
+}
+#endif

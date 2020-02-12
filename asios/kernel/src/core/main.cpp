@@ -1,6 +1,8 @@
 #include <jee.h>
 #include <string.h>
 
+#include "syslib.h"
+
 #include "flashwear.h" // TODO this probably shouldn't be in the kernel
 FlashWear disk;
 
@@ -143,14 +145,9 @@ void changeTask (void* next) {
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Message-based IPC.
+// Tasks and task management with message-based IPC.
 
 typedef int Message [8];
-
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Tasks and task management.
-
-extern "C" int texit (int); // forward declaration XXX yuck
 
 class Task {
 public:
@@ -267,6 +264,20 @@ public:
         return found;
     }
 
+    // change this task from waiting on another task to suspended
+    Message* detach () {
+        if (!removeFrom(blocking->inProgress))
+            ;//panic("can't detach");
+        blocking = this;
+        return grab(message); // return the message buffer and clear it
+    }
+
+    // make a suspended or waiting task runnable again
+    void resume () {
+        request = 0;
+        blocking = 0; // then allow it to run again
+    }
+
     // a crude task dump for basic debugging, using console & printf
     void dump () const {
         if (pspSaved) {
@@ -312,11 +323,6 @@ private:
         return -1; // suspended, this result will be adjusted when resuming
     }
 
-    void resume () {
-        request = 0;
-        blocking = 0; // then allow it to run again
-    }
-
     // append this task to the end of a list
     void appendTo (Task*& list) {
         if (next)
@@ -341,15 +347,9 @@ private:
 Task Task::vec [];
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// System call handlers and dispatch vector. These always run in SVC context.
 // The kernel code above needs to know almost nothing about everything below.
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-extern "C" {
-#include <syslib.h>
-}
-
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // SVC system call interface, required to switch from thread to handler state.
 // Only an IPC call is processed right away, the rest is sent to task #0.
 //
@@ -439,6 +439,8 @@ SysRoute routes [256]; // indexed by the SVC request code, i.e. 0..255
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Task zero, the special system task. It's the only one started by main().
 
+volatile uint32_t nextWakeup;
+
 #if 1
 // just a quick hack to force a context switch on the next 1000 Hz clock tick
 // it causes a continous race of task switches, since each waiting task yields
@@ -448,17 +450,18 @@ SysRoute routes [256]; // indexed by the SVC request code, i.e. 0..255
 //
 // TODO solution is to suspend delaying tasks so they don't eat up cpu cycles
 // but this needs some new code, to manage multiple timers and queues for them
-bool yield;
+bool yieldNow;
 
 // use a different name to avoid clashing with JeeH's "wait_ms" version
 void msWait (uint32_t ms) {
     uint32_t start = ticks;
     while ((uint32_t) (ticks - start) < ms) {
-        yield = true;
+        yieldNow = true;
         __asm("wfi");  // reduce power consumption
     }
 }
 #endif
+//#define msWait yield
 
 VTable* irqVec;     // see below TODO this can be fixed in JeeH
 
@@ -468,6 +471,27 @@ void runPrivileged (void (*fun)()) {
     irqVec->sv_call = fun;
     asm volatile ("svc #0");
     irqVec->sv_call = SVC_Handler;
+}
+
+// go through all tasks and unblock those that are in yield() and have expired
+// this is called from the systick IRQ, but will never preempt an active SVC
+// note: pspSw.curr and Task::current() are valid, but curr->context() is not
+void resumeExpiredTasks () {
+    uint32_t now = ticks; // read volatile "ticks" counter once
+    int wakeup = 1<<30;
+    for (int i = 0; i < Task::MAX_TASKS; ++i) {
+        Task& t = Task::vec[i];
+        if (t.request == SYSCALL_yield && t.blocking == &t) {
+            // this is never the current active task, for which blocking == 0
+            uint32_t timeout = t.context().r[1]; // i.e. the unused arg trick
+            int msToGo = timeout - now;
+            if (msToGo <= 0)
+                t.resume(); // this yield timer has expired
+            else if (msToGo < wakeup)
+                wakeup = msToGo; // this is the best next wakeup time so far
+        }
+    }
+    nextWakeup = now + wakeup; // adjust the next expiration time
 }
 
 void systemTask (void* arg) {
@@ -484,15 +508,21 @@ void systemTask (void* arg) {
         // kernel code can be interrupted by most handlers other than PendSV
         MMIO8(0xE000ED1F) = 0xFF; // SHPR2->PRI_11 = 0xFF
 
+        // also lower the priority of SysTicks so they won't interrupt SVCs and
+        // task switches + timeout wakeups don't interfere with active syscalls
+        MMIO8(0xE000ED23) = 0xFF; // SHPR3->PRI_15 = 0xFF
+
         // TODO set up all MPU regions and enable the MPU's memory protection
     });
 
     irqVec->systick = []() {
         ++ticks;
-        if (yield || ticks % 20 == 0) // switch tasks every 20 ms
+        if ((int) (nextWakeup - ticks) < 0) // careful with overflow
+            resumeExpiredTasks();
+        if (yieldNow || ticks % 20 == 0) // switch tasks every 20 ms
             if ((Task*) pspSw.curr != Task::vec) // unless in system task
                 changeTask(Task::nextRunnable());
-        yield = false;
+        yieldNow = false;
     };
 
     disk.init(); // TODO flashwear disk shouldn't be here
@@ -628,6 +658,18 @@ void systemTask (void* arg) {
                 break;
             }
 
+            case SYSCALL_yield: {
+                uint32_t now = ticks; // read volatile "ticks" counter once
+                int ms = args[0];
+                // the trick: calculate and store wakeup time in unused 2nd arg
+                args[1] = now + ms;
+                isCall = false; // don't send a reply now, timeout will do it
+                if ((uint32_t*) from.detach() != args)
+                    ;//panic("detach mixup");
+                // if this timer expires before the next wakeup time, fix it
+                if (ms < (int) (nextWakeup - now)) // careful with overflow
+                    nextWakeup = now + ms;
+            }
         }
 
         // unblock the originating task if it's waiting
