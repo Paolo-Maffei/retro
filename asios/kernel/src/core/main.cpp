@@ -58,6 +58,17 @@ void setupFaultHandlers () {
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// General-purpose code.
+
+// copy a value (of any type), setting the original to zero
+template< typename T >
+T grab (T& x) {
+    T r = x;
+    x = 0;
+    return r;
+}
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Task switcher, adapted from a superb example in Joseph Yiu's book, ch. 10:
 // "The Definitive Guide to Arm Cortex M3 and M4", 3rd edition, 2014.
 
@@ -132,39 +143,6 @@ void changeTask (void* next) {
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Generic zero-terminated list handling, all it needs is a "next" field.
-
-// copy a value (of any type), setting the original to zero
-template< typename T >
-T grab (T& x) {
-    T r = x;
-    x = 0;
-    return r;
-}
-
-// append an item to the end of a list
-template< typename T >
-void listAppend (T*& list, T& item) {
-    if (item.next)
-        panic("item already in list");
-    while (list)
-        list = list->next;
-    list = &item;
-}
-
-// remove an item from a list
-template< typename T >
-bool listRemove (T*& list, T& item) {
-    while (list != &item)
-        if (list)
-            list = list->next;
-        else
-            return false;
-    list = grab(item.next);
-    return true;
-}
-
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Message-based IPC.
 
 typedef int Message [8];
@@ -234,7 +212,7 @@ public:
         //printf("S: deliver %08x %d => %d req %d\n",
         //    msg, from.index(), index(), from.request);
         if (blocking && blocking != this) // am I waiting for a reply?
-            if (!listRemove(blocking->inProgress, *this))
+            if (!removeFrom(blocking->inProgress))
                 return -1; // waiting on something else, reject this delivery
 
         if (message == 0) // is this task ready to receive a message?
@@ -256,7 +234,7 @@ public:
         //    msg, from.index(), index(), from.request);
         int e = deliver(from, msg);
         // either try delivery again later, or wait for reply
-        listAppend(e < 0 ? incoming : inProgress, from);
+        from.appendTo(e < 0 ? incoming : inProgress);
         return from.suspend(this, msg);
     }
 
@@ -270,19 +248,19 @@ public:
         //printf("S:     got %08x %d => %d req %d\n",
         //    from.message, from.index(), index(), from.request);
         incoming = grab(incoming->next);
-        listAppend(inProgress, from);
+        from.appendTo(inProgress);
         memcpy(msg, from.message, sizeof *msg); // copy msg to this task
         return from.index();
     }
 
     // forward current call to this destination
     bool forward (Task& from, Message* msg) {
-        bool found = listRemove(current().inProgress, from);
+        bool found = from.removeFrom(current().inProgress);
         if (found) {
             from.blocking = 0; // TODO figure this out, also request = 0 ?
             memcpy(from.message, msg, sizeof *msg); // copy req back to sender
             int e = deliver(from, from.message); // re-deliver
-            listAppend(e < 0 ? incoming : inProgress, from);
+            from.appendTo(e < 0 ? incoming : inProgress);
         }
         return found;
     }
@@ -335,6 +313,26 @@ private:
     void resume () {
         request = 0;
         blocking = 0; // then allow it to run again
+    }
+
+    // append this task to the end of a list
+    void appendTo (Task*& list) {
+        if (next)
+            panic("item already in list");
+        while (list)
+            list = list->next;
+        list = this;
+    }
+
+    // remove this task from a list
+    bool removeFrom (Task*& list) {
+        while (list != this)
+            if (list)
+                list = list->next;
+            else
+                return false;
+        list = grab(next);
+        return true;
     }
 };
 
