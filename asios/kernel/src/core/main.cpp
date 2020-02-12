@@ -532,7 +532,6 @@ void systemTask (void* arg) {
         int req = from.request;
         uint32_t* args = from.context().r;
         bool isCall = from.blocking == Task::vec;
-        int reply = -1; // the default reply is failure
 
         // decide what to do with this request
         SysRoute& sr = routes[(uint8_t) req]; // index is never out of range
@@ -560,6 +559,8 @@ void systemTask (void* arg) {
                     ticks, isCall ? "CALL" : "SEND", req, src, args);
 #endif
         // non-forwarded requests are handled by this system task
+        // cases below use "continue" iso "break" to avoid replying & resuming
+        int reply = -1; // the default reply is failure
         switch (req) {
             default:
                 printf("%d S: %s (0,#%d) ?\n",
@@ -631,17 +632,15 @@ void systemTask (void* arg) {
             case SYSCALL_twait: {
                 int arg = args[0];
                 printf("%d S: twait by %d arg %d\n", ticks, src, arg);
-                isCall = false; // don't send a reply until the wait is over
                 // TODO append to finished queue of task it's waiting on?
-                break;
+                continue; // don't reply & resume until the wait is over
             }
 
             case SYSCALL_texit: {
                 int arg = args[0];
                 printf("%d S: texit by %d arg %d\n", ticks, src, arg);
-                isCall = false; // don't send a reply, this task has ended
                 // TODO resume waiting tasks and release the Task for re-use
-                break;
+                continue; // don't reply & resume, this task has ended
             }
 
             case SYSCALL_yield: {
@@ -649,12 +648,12 @@ void systemTask (void* arg) {
                 int ms = args[0];
                 // the trick: calculate and store wakeup time in unused 2nd arg
                 args[1] = now + ms;
-                isCall = false; // don't send a reply now, timeout will do it
                 if ((uint32_t*) from.detach() != args)
                     ;//panic("detach mixup");
                 // if this timer expires before the next wakeup time, fix it
                 if (ms < (int) (nextWakeup - now)) // careful with overflow
                     nextWakeup = now + ms;
+                continue; // don't reply & resume now, timeout will do it
             }
         }
 
