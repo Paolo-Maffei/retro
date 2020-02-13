@@ -178,14 +178,19 @@ public:
         return -1; // no free slot
     }
 
-    HardwareStackFrame& context () const {
-        return *(HardwareStackFrame*) (pspSaved + PSP_EXTRA);
+    // return pointer to saved registers on this task's process stack
+    uint32_t* regs () const {
+        // pspSaved is not always valid for the active task, see SVC_Handler
+        return pspSaved + PSP_EXTRA;
     }
 
+    // true when this task is suspended while in a yield system call
     bool inYield () const {
+        // this is one of the few places where the kernel knows about req codes
         return request == SYSCALL_yield && blocking == this;
     }
 
+    // find the next runnable task to switch to, might be same as current one
     static Task* nextRunnable () {
         Task* tp = &current();
         do
@@ -207,9 +212,9 @@ public:
             return -1; // nope, can't deliver this message
 
         Message* buf = grab(message);
-        if (buf != (Message*) &context()) { // if it was a receive, not syscall
+        if (buf != (Message*) regs()) { // if it was a receive, not syscall
             memcpy(buf, msg, sizeof *msg);  // copy message to destination
-            context().r[0] = from.index();  // return sender's task id
+            *regs() = from.index();  // return sender's task id
         }
         resume();
         return 0; // successful delivery
@@ -423,7 +428,7 @@ void SVC_Handler () {
 
         // wrap everything else into an ipcCall to task #0
         default: {
-            Message* msg = (Message*) &t.context(); // not a real msg buffer
+            Message* msg = (Message*) t.regs(); // not a real msg buffer
             t.request = req; // save SVC number in task object
             (void) Task::vec[0].replyTo(msg); // XXX explain void
             break;
@@ -474,7 +479,7 @@ bool resumeExpiredTasks () {
         Task& t = Task::vec[i];
         if (t.inYield()) {
             // this is never the current active task, for which blocking == 0
-            uint32_t timeout = t.context().r[1]; // i.e. the unused arg trick
+            uint32_t timeout = t.regs()[1]; // i.e. the unused arg trick
             int msToGo = timeout - now;
             if (msToGo <= 0) {
                 t.resume(); // this yield timer has expired
@@ -508,7 +513,7 @@ void systemTask (void* arg) {
     });
 
     // periodic system tick, this never runs while SVC or other IRQs are active
-    // note: pspSw.curr & Task::current() are valid, but curr->context() isn't
+    // note: pspSw.curr & Task::current() are valid, but curr->regs() isn't
     irqVec->systick = []() {
         bool couldSwitch = ++ticks % 32 == 0; // time to preempt, note the "++"
 
@@ -539,7 +544,7 @@ void systemTask (void* arg) {
         // examine the incoming request, calls will need a reply
         Task& from = Task::vec[src];
         int req = from.request;
-        uint32_t* args = from.context().r;
+        uint32_t* args = from.regs();
         bool isCall = true; /// always? TODO from.blocking == Task::vec;
 
         // decide what to do with this request
