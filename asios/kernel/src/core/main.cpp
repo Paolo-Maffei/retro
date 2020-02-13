@@ -154,16 +154,15 @@ class Task {
     uint32_t* mpuMaps;  // MUST be second in task objects, see PendSV_Handler
     Message* message;   // set while recv or reply can take a new message
     // these task ptrs could be made indices, freeing 12b of 16b if <256 tasks
+    Task* blocking;     // set while waiting, to task we're queued on, or self
     Task* incoming;     // tasks waiting for their call to be accepted
     Task* inProgress;   // tasks waiting for their call to be completed
     Task* next;         // used in waiting tasks, i.e. when on some linked list
 public:
-    Task* blocking;     // set while waiting, to task we're queued on, or self
-
     enum { Early, App, Server, Driver }; // type of task
+
     uint8_t type :2;    // set once the first SVC call is made
     uint8_t request;    // request number of current system call
-
     uint8_t spare[2];   // pad the total task size to 32 bytes
 
     static constexpr int MAX_TASKS = 25;
@@ -193,6 +192,10 @@ public:
 
     HardwareStackFrame& context () const {
         return *(HardwareStackFrame*) (pspSaved + PSP_EXTRA);
+    }
+
+    bool inYield () const {
+        return request == SYSCALL_yield && blocking == this;
     }
 
     static Task* nextRunnable () {
@@ -466,7 +469,7 @@ bool resumeExpiredTasks () {
     uint32_t now = ticks; // read volatile "ticks" counter once
     for (int i = 0; i < Task::MAX_TASKS; ++i) {
         Task& t = Task::vec[i];
-        if (t.request == SYSCALL_yield && t.blocking == &t) {
+        if (t.inYield()) {
             // this is never the current active task, for which blocking == 0
             uint32_t timeout = t.context().r[1]; // i.e. the unused arg trick
             int msToGo = timeout - now;
@@ -534,7 +537,7 @@ void systemTask (void* arg) {
         Task& from = Task::vec[src];
         int req = from.request;
         uint32_t* args = from.context().r;
-        bool isCall = from.blocking == Task::vec;
+        bool isCall = true; /// always? TODO from.blocking == Task::vec;
 
         // decide what to do with this request
         SysRoute& sr = routes[(uint8_t) req]; // index is never out of range
