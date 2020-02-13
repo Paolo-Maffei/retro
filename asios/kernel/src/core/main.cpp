@@ -184,12 +184,6 @@ public:
         return pspSaved + PSP_EXTRA;
     }
 
-    // true when this task is suspended while in a yield system call
-    bool inYield () const {
-        // this is one of the few places where the kernel knows about req codes
-        return request == SYSCALL_yield && blocking == this;
-    }
-
     // find the next runnable task to switch to, might be same as current one
     static Task* nextRunnable () {
         Task* tp = &current();
@@ -270,23 +264,15 @@ public:
         return grab(message); // return the message buffer and clear it
     }
 
-    // make a suspended or waiting task runnable again
-    void resume () {
-        request = 0;
-        blocking = 0; // then allow it to run again
+    // unblock all tasks which are in yield() and have expired
+    static uint32_t resumeAllExpired (uint32_t now) {
+        int wakeup = 1<<30; // a really big value: over 12 days in milliseconds
+        for (int i = 0; i < Task::MAX_TASKS; ++i)
+            Task::vec[i].checkTimeout(now, &wakeup);
+        return now + wakeup; // new best next yield expiration time
     }
 
-    // a crude task dump for basic debugging, using console & printf
-    void dump () const {
-        if (pspSaved) {
-            printf("  [%03x] %2d: %c%c sp %08x", (uint32_t) this & 0xFFF,
-                    this - vec, " *<~"[type], "USWRA"[state()], pspSaved);
-            printf(" blk %2d pq %08x fq %08x buf %08x req %d\n",
-                    blocking == 0 ? -1 : blocking->index(),
-                    incoming, inProgress, message, request);
-        }
-    }
-
+    // dump all tasks in use, using console & printf
     static void dumpAll () {
         for (int i = 0; i < MAX_TASKS; ++i)
             Task::vec[i].dump();
@@ -335,6 +321,12 @@ private:
         message = msg;
     }
 
+    // make a suspended or waiting task runnable again
+    void resume () {
+        request = 0;
+        blocking = 0; // then allow it to run again
+    }
+
     // append this task to the end of a list
     void appendTo (Task*& list) {
         if (next)
@@ -353,6 +345,32 @@ private:
                 return false;
         list = grab(next);
         return true;
+    }
+
+    // unblock task if in yield() and it has expired
+    void checkTimeout (uint32_t now, int* wakeup) {
+        // true when this task is suspended while in a yield system call
+        // this is one of the few places where the kernel knows about req codes
+        if (request == SYSCALL_yield && blocking == this) {
+            // never the current active task, for which blocking == 0
+            uint32_t timeout = regs()[1]; // i.e. the unused arg trick
+            int msToGo = timeout - now;
+            if (msToGo <= 0)
+                resume(); // this yield timer has expired
+            else if (msToGo < *wakeup)
+                *wakeup = msToGo; // this is the best next wakeup time so far
+        }
+    }
+
+    // a crude task dump for basic debugging, using console & printf
+    void dump () const {
+        if (pspSaved) {
+            printf("  [%03x] %2d: %c%c sp %08x", (uint32_t) this & 0xFFF,
+                    this - vec, " *<~"[type], "USWRA"[state()], pspSaved);
+            printf(" blk %2d pq %08x fq %08x buf %08x req %d\n",
+                    blocking == 0 ? -1 : blocking->index(),
+                    incoming, inProgress, message, request);
+        }
     }
 };
 
@@ -462,32 +480,6 @@ void runPrivileged (void (*fun)()) {
     irqVec->sv_call = SVC_Handler;
 }
 
-// go through all tasks and unblock those that are in yield() and have expired
-// this is called from the systick IRQ, but will never preempt an active SVC
-// returns true if any tasks have been made runnable
-bool resumeExpiredTasks () {
-    bool woken = false;
-    int wakeup = 1<<30; // a really big value: over 12 days in milliseconds
-
-    uint32_t now = ticks; // read volatile "ticks" counter once
-    for (int i = 0; i < Task::MAX_TASKS; ++i) {
-        Task& t = Task::vec[i];
-        if (t.inYield()) {
-            // this is never the current active task, for which blocking == 0
-            uint32_t timeout = t.regs()[1]; // i.e. the unused arg trick
-            int msToGo = timeout - now;
-            if (msToGo <= 0) {
-                t.resume(); // this yield timer has expired
-                woken = true;
-            } else if (msToGo < wakeup)
-                wakeup = msToGo; // this is the best next wakeup time so far
-        }
-    }
-
-    nextWakeup = now + wakeup; // adjust the next yield expiration time
-    return woken;
-}
-
 void systemTask (void* arg) {
     // This is task #0, running in thread mode. Since the MPU has not yet been
     // enabled and we have full R/W access to the interrupt vector in RAM, we
@@ -512,8 +504,10 @@ void systemTask (void* arg) {
     irqVec->systick = []() {
         bool couldSwitch = ++ticks % 32 == 0; // time to preempt, note the "++"
 
-        if ((int) (nextWakeup - ticks) < 0) // careful with overflow
-            couldSwitch |= resumeExpiredTasks();
+        if ((int) (nextWakeup - ticks) < 0) { // careful with overflow
+            nextWakeup = Task::resumeAllExpired(ticks);
+            couldSwitch = true;
+        }
 
         // TODO maybe the system task needs to raise its base priority instead?
         if (couldSwitch && (Task*) pspSw.curr != Task::vec)
