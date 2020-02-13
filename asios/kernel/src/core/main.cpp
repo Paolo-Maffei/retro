@@ -502,15 +502,16 @@ void systemTask (void* arg) {
     // periodic system tick, this never runs while SVC or other IRQs are active
     // note: pspSw.curr & Task::current() are valid, but curr->regs() isn't
     irqVec->systick = []() {
-        bool couldSwitch = ++ticks % 32 == 0; // time to preempt, note the "++"
+        ++ticks;
 
-        if ((int) (nextWakeup - ticks) < 0) { // careful with overflow
+        bool expire = (int) (nextWakeup - ticks) < 0; // careful with overflow
+        if (expire)
             nextWakeup = Task::resumeAllExpired(ticks);
-            couldSwitch = true;
-        }
+        else
+            expire = ticks % 32 == 0; // time to preempt
 
         // TODO maybe the system task needs to raise its base priority instead?
-        if (couldSwitch && (Task*) pspSw.curr != Task::vec)
+        if (expire && (Task*) pspSw.curr != Task::vec)
             changeTask(Task::nextRunnable()); // don't preempt system task
     };
 
