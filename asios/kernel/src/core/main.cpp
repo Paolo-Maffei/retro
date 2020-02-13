@@ -168,26 +168,14 @@ public:
     static constexpr int MAX_TASKS = 25;
     static Task vec [MAX_TASKS];
 
-    static int findUnused () {
+    // find the next free task slot and initialise it
+    static int create (void* top, void (*proc)(void*), void* arg) {
         for (int i = 0; i < MAX_TASKS; ++i)
-            if (vec[i].state() == Unused)
+            if (vec[i].state() == Unused) {
+                vec[i].init(top, proc, arg);
                 return i;
-        return -1;
-    }
-
-    void init (void* top, void (*proc)(void*), void* arg) {
-        // use the C++11 compiler to verify some design choices
-        static_assert(sizeof (Message) == 32); // fixed/known msg buffer size
-        static_assert((sizeof *this & (sizeof *this - 1)) == 0); // power of 2
-
-        HardwareStackFrame* psp = (HardwareStackFrame*) top - 1;
-        psp->r[0] = (uint32_t) arg;
-        psp->lr = (uint32_t) texit;
-        psp->pc = (uint32_t) proc;
-        psp->psr = 0x01000000;
-        pspSaved = (uint32_t*) psp - PSP_EXTRA;
-        static const uint32_t dummyMaps [4] = {}; // two disabled regions
-        mpuMaps = (uint32_t*) dummyMaps;
+            }
+        return -1; // no free slot
     }
 
     HardwareStackFrame& context () const {
@@ -312,6 +300,21 @@ private:
                     blocking ? Waiting :    // waiting on another task
           this != &current() ? Runnable :   // will run when scheduled
                                Active;      // currently running
+    }
+
+    void init (void* top, void (*proc)(void*), void* arg) {
+        // use the C++11 compiler to verify some design choices
+        static_assert(sizeof (Message) == 32); // fixed/known msg buffer size
+        static_assert((sizeof *this & (sizeof *this - 1)) == 0); // power of 2
+
+        HardwareStackFrame* psp = (HardwareStackFrame*) top - 1;
+        psp->r[0] = (uint32_t) arg;
+        psp->lr = (uint32_t) texit;
+        psp->pc = (uint32_t) proc;
+        psp->psr = 0x01000000;
+        pspSaved = (uint32_t*) psp - PSP_EXTRA;
+        static const uint32_t dummyMaps [4] = {}; // two disabled regions
+        mpuMaps = (uint32_t*) dummyMaps;
     }
 
     void suspend (Task* reason, Message* msg) {
@@ -521,7 +524,7 @@ void systemTask (void* arg) {
 
     // set up task 1, using the stack and entry point found in flash memory
     uint32_t* task1 = (uint32_t*) arg;
-    Task::vec[1].init((void*) task1[0], (void (*)(void*)) task1[1], 0);
+    Task::create((void*) task1[0], (void (*)(void*)) task1[1], 0);
 #if 0
 #include "test_tasks.h"
 #endif
@@ -627,11 +630,9 @@ void systemTask (void* arg) {
                 void* top = (void*) args[0];
                 void (*proc)(void*) = (void (*)(void*)) args[1];
                 void* arg = (void*) args[2];
-                reply = Task::findUnused();
+                reply = Task::create(top, proc, arg);
                 printf("%d S: tfork by %d => %d sp %08x pc %08x arg %d\n",
                         ticks, src, reply, top, proc, arg);
-                if (reply >= 0)
-                    Task::vec[reply].init(top, proc, arg);
                 break;
             }
 
@@ -702,7 +703,7 @@ text 08000010,4744b data 2001E000,0b bss E000,2992b sp EBB0,4176b msp FC00,1024b
     irqVec = &VTableRam(); // this call can't be used in thread mode
 
     // initialize the very first task, and give it the vector of the second one
-    Task::vec[0].init(systemStack, systemTask, (void*) 0x08004000);
+    Task::create(systemStack, systemTask, (void*) 0x08004000);
 
     startTasks(Task::vec); // leap into unprivileged thread mode, never returns
 }
