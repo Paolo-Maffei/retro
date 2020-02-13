@@ -232,15 +232,17 @@ public:
         int e = deliver(from, msg);
         // either try delivery again later, or wait for reply
         from.appendTo(e < 0 ? incoming : inProgress);
-        return from.suspend(this, msg);
+        from.suspend(this, msg);
+        return -1; // will be adjusted before resuming
     }
 
     // listen for incoming messages, block each sender while handling calls
     int listen (Message* msg) {
         //printf("S:  listen %08x   at %d\n", msg, index());
-        if (incoming == 0)
-            return suspend(this, msg);
-
+        if (incoming == 0) {
+            suspend(this, msg);
+            return -1; // will be adjusted before resuming
+        }
         Task& from = *incoming;
         //printf("S:     got %08x %d => %d req %d\n",
         //    from.message, from.index(), index(), from.request);
@@ -309,7 +311,7 @@ private:
                                Active;      // currently running
     }
 
-    int suspend (Task* reason, Message* msg) {
+    void suspend (Task* reason, Message* msg) {
         if (pspSw.curr != &pspSaved) // could be supported, but no need so far
             printf(">>> SUSPEND? %08x != curr %08x\n", this, pspSw.curr);
 
@@ -319,8 +321,7 @@ private:
         changeTask(next); // will trigger PendSV tail-chaining
 
         blocking = reason;
-        message = msg ? msg : (Message*) &context();
-        return -1; // suspended, this result will be adjusted when resuming
+        message = msg;
     }
 
     // append this task to the end of a list
@@ -414,11 +415,13 @@ void SVC_Handler () {
 
         //case SYSCALL_ipcPass: do_ipcPass(sfp); break;
 
-        // wrap everything else into a message-less ipcCall to task #0
-        default:
+        // wrap everything else into an ipcCall to task #0
+        default: {
+            Message* msg = (Message*) &t.context(); // not a real msg buffer
             t.request = req; // save SVC number in task object
-            (void) Task::vec[0].replyTo(0); // no msg buffer XXX explain void
+            (void) Task::vec[0].replyTo(msg); // XXX explain void
             break;
+        }
     }
 }
 
