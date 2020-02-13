@@ -150,15 +150,15 @@ void changeTask (void* next) {
 typedef int Message [8];
 
 class Task {
-public:
     uint32_t* pspSaved; // MUST be first in task objects, see PendSV_Handler
     uint32_t* mpuMaps;  // MUST be second in task objects, see PendSV_Handler
     Message* message;   // set while recv or reply can take a new message
     // these task ptrs could be made indices, freeing 12b of 16b if <256 tasks
-    Task* blocking;     // set while waiting, to task we're queued on, or self
     Task* incoming;     // tasks waiting for their call to be accepted
     Task* inProgress;   // tasks waiting for their call to be completed
     Task* next;         // used in waiting tasks, i.e. when on some linked list
+public:
+    Task* blocking;     // set while waiting, to task we're queued on, or self
 
     enum { Early, App, Server, Driver }; // type of task
     uint8_t type :2;    // set once the first SVC call is made

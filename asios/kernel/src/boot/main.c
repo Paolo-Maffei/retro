@@ -9,7 +9,7 @@ int main () {
     int* task = (int*) 0x08008000;
     int tid = tfork((void*) task[0], (void (*)(void*)) task[1], 0);
 
-#if 0
+#if 1
     // test the "yield(ms)" timer
     for (char c = '1'; c <= '9'; ++c) {
         yield(250);
