@@ -180,7 +180,7 @@ public:
 
     // return pointer to saved registers on this task's process stack
     uint32_t* regs () const {
-        // pspSaved is not always valid for the active task, see SVC_Handler
+        // careful: pspSaved is NOT valid for the active task
         return pspSaved + PSP_EXTRA;
     }
 
@@ -377,11 +377,6 @@ void SVC_Handler () {
     printf("< svc.%d psp %08x r0.%d lr %08x pc %08x psr %08x >\n",
             req, sfp, sfp->r[0], sfp->lr, sfp->pc, sfp->psr);
 #endif
-    // first of all, make *pspSw.curr "resemble" a stack with full context
-    // this is fiction, since R4-R11 (and FP regs) have *not* been saved
-    // note that *pspSw.curr is not authoritative, h/w uses the real psp
-    // now all valid task entries have similar stack ptrs for kernel use
-    *pspSw.curr = (uint32_t*) sfp - PSP_EXTRA;
     Task& t = *(Task*) pspSw.curr;
 
     // fully-automated task categorisation: the first SVC request made by a
