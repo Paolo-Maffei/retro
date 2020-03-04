@@ -7,24 +7,6 @@
 FlashWear disk;
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// This stuff should probably be in JeeH, perhaps arch/stm32f4.h ?
-
-// cycle counts, see https://stackoverflow.com/questions/11530593/
-
-namespace Periph {
-    constexpr uint32_t dwt = 0xE0001000;
-}
-
-struct DWT {
-    constexpr static uint32_t ctrl   = Periph::dwt + 0x0;
-    constexpr static uint32_t cyccnt = Periph::dwt + 0x4;
-
-    static void start () { MMIO32(cyccnt) = 0; MMIO32(ctrl) |= 1<<0; }
-    static void stop () { MMIO32(ctrl) &= ~(1<<0); }
-    static uint32_t count () { return MMIO32(cyccnt); }
-};
-
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Console device and exception handler debugging.
 
 UartBufDev< PinA<9>, PinA<10>, 150 > console;
@@ -108,6 +90,7 @@ void PendSV_Handler () {
         ldm    r1,{r2-r5}   // load R2 to R5 for 2 MPU regions (4 regs) \n\
         ldr    r1,=0xE000ED9C // load address of first MPU RBAR reg \n\
         stm    r1,{r2-r5}   // store 2 new maps in MPU regs (4 regs) \n\
+        // TODO dsb+isb // DAI 0321A p.39: add for M7, not M4 (see p.46) \n\
         ldmia  r0!,{r4-r11} // pop R4 to R11 from task stack (8 regs) \n\
         msr    psp, r0      // set PSP to next task \n\
     ");
