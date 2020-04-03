@@ -57,11 +57,19 @@ int main() {
     context.state.pc = 0x100;
     context.done = 0;
 
+    uint64_t cycles = 0;
     uint32_t start = millis();
-    do {
-        Z80Emulate(&context.state, 2000000, &context);
-    } while (!context.done);
-    printf("\nEmulating zexall took %d ms.\n", millis() - start);
+
+    do
+        cycles += Z80Emulate(&context.state, 1000000000, &context);
+    while (!context.done);
+
+    uint32_t t = millis() - start;
+    printf("\nEmulating zexall took %.1f seconds: %llu cycles @ %.1f MHz\n",
+            t/1000.0, cycles, cycles/(1000.0*t));
+
+    // Mac Mini 2018 i7 @ 3.2 GHz:
+    //  Emulating zexall took 48.8 seconds: 46734978649 cycles @ 957.2 MHz
 
     return 0;
 }
